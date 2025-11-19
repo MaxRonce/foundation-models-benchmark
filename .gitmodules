@@ -1,3 +1,7 @@
 [submodule "AION"]
 	path = AION
 	url = https://github.com/ASKabalan/AION.git
+[submodule "astroPT"]
+	path = astroPT
+	url = git@github.com:jzoubian/astroPT.git
+	branch = astroinfo
