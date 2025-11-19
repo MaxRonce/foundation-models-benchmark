@@ -5,3 +5,6 @@
 	path = astroPT
 	url = git@github.com:jzoubian/astroPT.git
 	branch = astroinfo
+[submodule "AstroCLIP"]
+	path = AstroCLIP
+	url = https://github.com/Annapreto23/AstroCLIP.git
