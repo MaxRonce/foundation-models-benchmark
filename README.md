@@ -13,6 +13,30 @@ We explore:
 2. Correlation with physical galaxy properties (mass, SFR, age, colors)
 3. Cross-model comparison to understand different architectures
 
+## Hackathon Work Summary
+
+This repository aggregates the hackathon outcomes comparing three multimodal model families on Euclid Q1 imaging + DESI spectra:
+- **AION** (foundation multimodal): separate spectra-only, images-only and fused embeddings enabling complementarity analysis.
+- **astroPT** (transformer multimodal): joint training producing a unified embedding space for spectra+images.
+- **AstroCLIP** (contrastive): image–spectrum alignment; training issues identified and pending fixes for stable convergence.
+
+### Delivered During Hackathon
+- Extracted embeddings (spectra-only, images-only, fused) and performed UMAP projections across physical (mass, SFR, DN4000, colors) and morphological (ellipticity, concentration, asymmetry, smoothness, Gini, Sérsic) properties.
+- Cross-model correlation benchmarking of encoded galaxy properties.
+- Cosine similarity analyses between modality-specific and fused embeddings to quantify redundancy vs complementarity.
+- Initial anomaly exploration (spectral class separation: GALAXY / QSO / STAR) informing downstream outlier strategies.
+
+### Current Data Scope
+- Working matched sample: ~15k Euclid cutouts + DESI spectra.
+- Planned expansion (post-hackathon): larger Euclid sets (≈40k → DR1 scale) for improved statistical power.
+
+### High-Level Findings
+- Fused embeddings improve separation for age/mass-sensitive features (e.g., DN4000, stellar mass) relative to single modalities.
+- Spectra emphasize stellar population/age indicators; images emphasize morphology—together yield complementary structure.
+- Architectural differences (token fusion vs transformer joint encoding) produce distinct correlation profiles worth continued study.
+
+Further actionable next steps sourced from team discussion are added in a separate TODO section below.
+
 ## Notebooks
 
 ### 1. `aion_embeddings_analysis.ipynb`
