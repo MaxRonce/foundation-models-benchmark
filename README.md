@@ -36,6 +36,38 @@ This repository aggregates the hackathon outcomes comparing three multimodal mod
 - Architectural differences (token fusion vs transformer joint encoding) produce distinct correlation profiles worth continued study.
 
 Further actionable next steps sourced from team discussion are added in a separate TODO section below.
+ 
+## TODO (from Discord message - Maxime 2025-11-11)
+
+### Models
+- Fine-tune AION encoder.
+- Fix AstroCLIP.
+- Consider using the same image encoder for AION and AstroCLIP.
+
+### Data
+- Use 40k images dataset (instead of current 15k).
+- Consider full Euclid DR1 (~300k, membership + cutout generation + merge with DESI spectra).
+
+### Embeddings
+- Compare embedding types: spectrum-only, images-only, images + spectrum.
+- Quantify whether different embeddings recover the same types of anomalies.
+- Characterize anomalies and compare across embedding types.
+
+### Algorithms / Methods
+- Isolation Forest.
+- Local Outlier Factor (LOF).
+- Density-based methods.
+- Bayesian MLP regression on physical parameters; use higher predictive sigma as anomaly score.
+- Regression + SHAP to interpret what embeddings encode.
+
+### Targeted Anomaly Recovery
+- Lens catalog (images only).
+- Dual AGN (≈50 in the ~15k sample).
+- AGN.
+- Identify anomalies recovered by multiple embedding types.
+
+---
+These items guide post-hackathon prioritization; keep this section synchronized with ongoing discussions. Do not edit `TODO.md` for these entries.
 
 ## Notebooks
 
