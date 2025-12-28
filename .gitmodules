@@ -8,3 +8,15 @@
 [submodule "AstroCLIP"]
 	path = AstroCLIP
 	url = https://github.com/astroinfo-hacks/AstroCLIP.git
+[submodule "external/AION"]
+	path = external/AION
+	url = https://github.com/ASKabalan/AION.git
+	branch = generate_embeddings
+[submodule "external/AstroCLIP"]
+	path = external/AstroCLIP
+	url = https://github.com/Annapreto23/AstroCLIP.git
+	branch = main
+[submodule "external/astroPT"]
+	path = external/astroPT
+	url = https://github.com/astroinfo-hacks/astroPT.git
+	branch = multimodal_training
