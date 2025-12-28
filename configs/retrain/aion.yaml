@@ -1,0 +1,7 @@
+python: python
+entrypoint: scratch/retrain_euclid_codec.py
+args:
+  - --epochs
+  - "10"
+  - --lr
+  - "1e-4"

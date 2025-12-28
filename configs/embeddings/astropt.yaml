@@ -1,0 +1,7 @@
+python: python
+entrypoint: scratch/generate_embeddings_astropt.py
+args:
+  - --batch-size
+  - "128"
+  - --out
+  - "__AUTO__"
