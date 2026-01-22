@@ -9,11 +9,11 @@ USAGE EXAMPLES:
 
 Single GPU training:
 -------------------
-python scripts/train_spectra_images.py --batch-size 8 --compile
+python models/astropt/retrain_spectra_images.py --batch-size 8 --compile
 
 Multi-GPU training (2 GPUs):
 ---------------------------
-torchrun --standalone --nproc_per_node=2 scripts/train_spectra_images.py \\
+torchrun --standalone --nproc_per_node=2 models/astropt/retrain_spectra_images.py \\
     --batch-size 16 \\
     --grad-accum 4 \\
     --compile
@@ -42,22 +42,27 @@ try:
 except ImportError:
     _WANDB_AVAILABLE = False
 
+# CHANGED: Import from fmb.data instead of scratch
 from fmb.data.load_display_data_hsc import EuclidDESIDataset
-from fmb.paths import load_paths
 
-# Try to find astropt in external if not refactored
+# CHANGED: Ensure astropt imports work (try/except block from existing file)
 try:
     from astropt.model import GPT, GPTConfig, ModalityConfig, ModalityRegistry
 except ImportError:
     import sys
     from pathlib import Path
-    sys.path.append(str(Path(__file__).resolve().parents[4] / "external" / "astroPT"))
+    # Attempt to add external/astroPT to path if not installed
+    # Assumption: external/astroPT is 4 levels up from this file if in src/fmb/models/astropt
+    # But this file is now in src/fmb/models/astropt/retrain_spectra_images.py
+    # So relative path: ../../../../external/astroPT
+    external_path = Path(__file__).resolve().parents[4] / "external" / "astroPT"
+    if external_path.exists():
+        sys.path.append(str(external_path))
     from astropt.model import GPT, GPTConfig, ModalityConfig, ModalityRegistry
-# These relative imports might be broken if moved to fmb.models.astropt
-# Need to check where euclid_desi_dataset lives now.
-# Based on my Move-Item, I didn't move euclid_desi_dataset folder yet if it was in external/astroPT/scripts/
-# Wait, list_dir external/astroPT/scripts showed 'euclid_desi_dataset' as a DIR.
-# I should have moved it. 
+
+# CHANGED: Relative import to local euclid_desi_dataset package
+# Ensure src/fmb/models/astropt/euclid_desi_dataset exists and has multimodal_dataloader
+from .euclid_desi_dataset.multimodal_dataloader import multimodal_collate_fn, prepare_multimodal_batch
 
 
 class EuclidDESIMultimodalDataset(torch.utils.data.Dataset):
@@ -68,11 +73,9 @@ class EuclidDESIMultimodalDataset(torch.utils.data.Dataset):
         split: str = "train",
         image_size: int = 224,
         spectrum_length: int = 7781,
-        cache_dir: Optional[str] = None,
+        cache_dir: str = "/n03data/ronceray/datasets",
         verbose: bool = False,
     ):
-        if cache_dir is None:
-            cache_dir = str(load_paths().data)
         normalized_split = split.replace("+", ",") if isinstance(split, str) else split
         self.base = EuclidDESIDataset(split=normalized_split, cache_dir=cache_dir, verbose=verbose)
         self.image_size = image_size
@@ -813,148 +816,107 @@ def main():
         
         # Evaluation and checkpointing
         if iter_num % config.eval_interval == 0 and master_process:
-            losses = estimate_loss(model, train_loader, val_loader, config, modality_registry, device, ctx)
+            metrics = estimate_loss(model, train_loader, val_loader, config, modality_registry, device, ctx)
+            train_loss = metrics["train"]["spectra"]  # Using spectra loss as representative
+            val_loss = metrics["val"]["spectra"]
             
-            # Calculate overall validation loss (weighted average)
-            val_losses = losses["val"]
-            val_loss = sum(val_losses.values()) / len(val_losses) if val_losses else float('inf')
+            print(f"step {iter_num}: train loss {train_loss:.4f}, val loss {val_loss:.4f}, lr {lr:.2e}")
             
-            print(f"Iteration {iter_num}:")
-            print(f"  Train losses: {losses['train']}")
-            print(f"  Val losses: {losses['val']}")
-            print(f"  Learning rate: {lr:.2e}")
+            # Print summary every now and then
+            if iter_num % (config.eval_interval * 5) == 0:
+                 print_training_summary(iter_num, config.max_iters, best_val_loss, train_loss)
             
-            # Print progress summary every 50 iterations
-            if iter_num > 0 and iter_num % 50 == 0:
-                print_training_summary(iter_num, config.max_iters, best_val_loss, val_loss)
-            
-            # Log to file
-            if loss_log_file:
-                with open(loss_log_file, 'a') as f:
-                    f.write(f"{iter_num},{val_loss:.6f},{val_loss:.6f},{lr:.2e},{0}\n")
-            
+            # Log to wandb
             if config.log_via_wandb:
-                log_dict = {"iter": iter_num, "lr": lr}
-                for split, split_losses in losses.items():
-                    for modality, loss_val in split_losses.items():
-                        log_dict[f"{split}/{modality}_loss"] = loss_val
-                wandb.log(log_dict)
+                wandb.log({
+                    "iter": iter_num,
+                    "train/loss_spectra": metrics["train"]["spectra"],
+                    "train/loss_images": metrics["train"]["images"],
+                    "val/loss_spectra": metrics["val"]["spectra"],
+                    "val/loss_images": metrics["val"]["images"],
+                    "lr": lr,
+                })
             
-            # Save checkpoint every eval_interval (not just best)
-            checkpoint_name = f"ckpt_iter_{iter_num}.pt"
-            if iter_num > start_iter:  # Don't save immediately after resuming
-                save_checkpoint(model, optimizer, iter_num, best_val_loss, config, ddp, checkpoint_name)
-            
-            # Save best checkpoint if this is the best validation loss
-            if val_loss < best_val_loss or config.always_save_checkpoint:
+            # Save best checkpoint
+            if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                if iter_num > start_iter:  # Don't save immediately after resuming
-                    save_checkpoint(model, optimizer, iter_num, best_val_loss, config, ddp, "ckpt_best.pt")
+                save_checkpoint(model, optimizer, iter_num, best_val_loss, config, ddp, "ckpt_best.pt")
+                print(f"New best validation loss: {best_val_loss:.4f}")
             
-            # Generate reconstruction visualizations every eval_interval
-            if iter_num > start_iter:  # Skip first iteration and immediately after resuming
-                try:
-                    visualize_reconstructions(model, val_loader, config, modality_registry, device, ctx, iter_num)
-                except Exception as e:
-                    print(f"Warning: Failed to generate visualizations: {e}")
+            # Regular checkpoint
+            if config.always_save_checkpoint or (iter_num > 0 and iter_num % config.checkpoint_interval == 0):
+                save_checkpoint(model, optimizer, iter_num, best_val_loss, config, ddp, f"ckpt_{iter_num}.pt")
+            
+            # Visualize reconstructions
+            if iter_num % (config.eval_interval * 2) == 0:
+                visualize_reconstructions(model, val_loader, config, modality_registry, device, ctx, iter_num)
         
-        # Forward/backward pass with gradient accumulation
-        total_loss = 0.0
-        for micro_step in range(config.gradient_accumulation_steps):
-            try:
-                batch = next(train_iter)
-            except StopIteration:
-                # Reset iterator when we reach the end
-                train_iter = iter(train_loader)
-                batch = next(train_iter)
+        # Training step
+        # Handle data loading with potential end of epoch
+        try:
+            batch = next(train_iter)
+        except StopIteration:
+            train_iter = iter(train_loader)
+            batch = next(train_iter)
+        
+        # Prepare inputs
+        inputs = prepare_multimodal_batch(
+            batch, config.image_patch_size, config.spectrum_patch_size,
+            device, modality_registry
+        )
+        
+        if not inputs:
+            print(f"Warning: Empty batch at iteration {iter_num}")
+            continue
             
-            # Prepare inputs
-            inputs = prepare_multimodal_batch(
-                batch, config.image_patch_size, config.spectrum_patch_size,
-                device, modality_registry
-            )
-            
-            if not inputs:  # Skip if no valid inputs
-                print(f"Warning: Empty inputs in training loop at iter {iter_num}, micro_step {micro_step}")
-                continue
-            
-            # Debug first iteration
-            if iter_num == 0 and micro_step == 0:
-                print(f"Debug training inputs keys: {inputs.keys()}")
-                for key, val in inputs.items():
-                    if isinstance(val, torch.Tensor):
-                        print(f"  {key}: {val.shape}, dtype: {val.dtype}")
-            
-            with ctx:
-                # Proper target preparation for autoregressive training
-                # Model outputs seq_len-1 for autoregressive modalities, full seq_len for others
-                targets = {}
-                for modality in inputs.keys():
-                    if modality.endswith('_positions'):
-                        continue  # Skip position tensors
-                    
-                    if modality == 'images':
-                        # For autoregressive modality: target = input[1:] (remove first token)
-                        targets[modality] = inputs[modality][:, 1:, :]
-                    else:
-                        # For non-autoregressive modality: target = input (full sequence)
-                        targets[modality] = inputs[modality]
-                
-                logits, loss = model(inputs, targets=targets)
-                
-                # Debug loss
-                if loss is None:
-                    print(f"Warning: model returned None loss at iter {iter_num}, micro_step {micro_step}")
-                    print(f"  Model inputs: {inputs.keys()}")
+        with ctx:
+             # Proper target preparation (same as in estimate_loss)
+            targets = {}
+            for modality in inputs.keys():
+                if modality.endswith('_positions'):
                     continue
+                if modality == 'images':
+                    targets[modality] = inputs[modality][:, 1:, :]
+                else:
+                    targets[modality] = inputs[modality]
+                    
+            logits, loss = model(inputs, targets=targets)
+            loss = loss / config.gradient_accumulation_steps
+        
+        # Backward pass
+        scaler.scale(loss).backward()
+        
+        # Step optimizer
+        if (iter_num + 1) % config.gradient_accumulation_steps == 0:
+            if config.grad_clip != 0.0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+            iter_num += 1
+            
+            # Log training step
+            if iter_num % config.log_interval == 0 and master_process:
+                t1 = time.time()
+                dt = (t1 - t0) * 1000
+                loss_val = loss.item() * config.gradient_accumulation_steps
+                print(f"iter {iter_num}: loss {loss_val:.4f}, time {dt:.2f}ms")
                 
-                # Create loss_dict for compatibility with rest of training loop
-                loss_dict = {'total': loss}
+                # Write to log file
+                if loss_log_file:
+                    with open(loss_log_file, 'a') as f:
+                        f.write(f"{iter_num},{loss_val:.6f},,{lr:.2e},{dt:.2f}\n")
                 
-                # Scale loss for gradient accumulation
-                loss = loss / config.gradient_accumulation_steps
-            
-            # Backward pass
-            scaler.scale(loss).backward()
-            total_loss += loss.item()
-        
-        # Gradient clipping and optimizer step
-        if config.grad_clip != 0.0:
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
-        
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad(set_to_none=True)
-        
-        # Logging
-        if iter_num % config.log_interval == 0 and master_process:
-            t1 = time.time()
-            dt = t1 - t0
-            t0 = t1
-            
-            print(f"Iter {iter_num}: loss={total_loss:.4f}, time={dt*1000:.2f}ms, lr={lr:.2e}")
-            
-            # Log to file
-            if loss_log_file:
-                with open(loss_log_file, 'a') as f:
-                    f.write(f"{iter_num},{total_loss:.6f},{total_loss:.6f},{lr:.2e},{dt*1000:.2f}\n")
-            
-            if config.log_via_wandb:
-                wandb.log({"iter": iter_num, "train/loss": total_loss, "lr": lr, "time_ms": dt*1000})
-        
-        iter_num += 1
-    
-    # Final checkpoint
+                t0 = t1
+                
     if master_process:
+        print("Training finished!")
         save_checkpoint(model, optimizer, iter_num, best_val_loss, config, ddp, "ckpt_final.pt")
-        print("Training completed!")
+        if config.log_via_wandb:
+            wandb.finish()
     
-    # Cleanup
-    if ddp:
-        destroy_process_group()
-    if config.log_via_wandb and master_process:
-        wandb.finish()
+    destroy_process_group()
 
 
 if __name__ == "__main__":

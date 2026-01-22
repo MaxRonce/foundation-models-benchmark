@@ -36,6 +36,7 @@ embeddings/
 checkpoints/
 slurm/logs/
 runs/
+temp/
 
 # Configuration (sensitive or local)
 configs/paths_local.py

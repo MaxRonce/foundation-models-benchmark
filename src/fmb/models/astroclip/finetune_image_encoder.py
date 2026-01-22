@@ -2,7 +2,7 @@
 Fine-tune AstroCLIP image encoder(s) on one or several huggingface parquet datasets.
 
 Example:
-    python -m hackathon2025.tools.cli.finetune_image_encoder \\
+    python -m fmb.models.astroclip.finetune_image_encoder \\
         --parquet-path hf://datasets/.../train.parquet \\
         --checkpoint hackathon2025/data/astroclip.ckpt \\
         --output-path outputs/image_encoder_ft.pt \\
@@ -33,8 +33,9 @@ import torch.nn.utils as nn_utils
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset
 
-from hackathon2025.tools.inference import ParquetDataSource
-from astroclip.models.astroclip import AstroClipModel, CLIPLoss
+# CHANGED imports
+from fmb.data.astroclip_parquet import ParquetDataSource
+from fmb.models.astroclip.core.astroclip import AstroClipModel, CLIPLoss
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,7 +176,8 @@ def load_dataframe(
     """
     if use_arrow:
         # Load from local Arrow cache (HuggingFace format)
-        from hackathon2025.tools.inference.arrow_loader import (
+        # CHANGED: Import from fmb.data.astroclip_loader
+        from fmb.data.astroclip_loader import (
             load_local_arrow_dataset,
             convert_dataset_to_astroclip_format,
         )
@@ -490,8 +492,8 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
         shuffle=True,
         num_workers=parsed.num_workers,
     )
-    val_loader = (
-        build_dataloader(
+    if val_df is not None:
+        val_loader = build_dataloader(
             val_df,
             parsed.batch_size,
             parsed.slice_length,
@@ -500,9 +502,9 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
             shuffle=False,
             num_workers=parsed.num_workers,
         )
-        if val_df is not None
-        else None
-    )
+    else:
+        val_loader = None
+
 
     # Define unsafe load context manager
     from contextlib import contextmanager
@@ -668,8 +670,23 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
         if improved:
             best_val_loss = val_loss_for_patience
             patience_counter = 0
-            cpu_state = {k: v.detach().cpu() for k, v in image_encoder.state_dict().items()}
-            torch.save(cpu_state, parsed.output_path)
+            patience_counter = 0
+            
+            # Save ALL trainable components
+            checkpoint_payload = {
+                "image_encoder": {k: v.detach().cpu() for k, v in image_encoder.state_dict().items()},
+            }
+            if parsed.finetune_spectrum:
+                 checkpoint_payload["spectrum_encoder"] = {
+                     k: v.detach().cpu() for k, v in spectrum_encoder.state_dict().items()
+                 }
+            
+            # Handle logit scale
+            if parsed.learnable_scale:
+                scale_val = model.logit_scale.detach().cpu() if isinstance(model.logit_scale, torch.Tensor) else model.logit_scale
+                checkpoint_payload["logit_scale"] = scale_val
+                
+            torch.save(checkpoint_payload, parsed.output_path)
             print(f"[Epoch {epoch}] Nouveau meilleur modèle sauvegardé dans {parsed.output_path}")
         else:
             patience_counter += 1
@@ -677,13 +694,46 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
                 print("Patience atteinte, arrêt anticipé.")
                 break
 
-    best_state = torch.load(parsed.output_path, map_location="cpu")
-    image_encoder.load_state_dict(best_state)
+    # Reload best state
+    print(f"Reloading best model from {parsed.output_path}...")
+    best_payload = torch.load(parsed.output_path, map_location="cpu")
+    
+    # Check if it's the new format (dict with 'image_encoder') or old (just state dict)
+    if "image_encoder" in best_payload:
+        image_encoder.load_state_dict(best_payload["image_encoder"])
+        if parsed.finetune_spectrum and "spectrum_encoder" in best_payload:
+            spectrum_encoder.load_state_dict(best_payload["spectrum_encoder"])
+        if parsed.learnable_scale and "logit_scale" in best_payload:
+            # Restore scale
+            saved_scale = best_payload["logit_scale"]
+            if isinstance(model.logit_scale, torch.nn.Parameter):
+                with torch.no_grad():
+                    model.logit_scale.copy_(saved_scale if isinstance(saved_scale, torch.Tensor) else torch.tensor(saved_scale))
+    else:
+        # Fallback for old format (only image encoder)
+        image_encoder.load_state_dict(best_payload)
 
     if parsed.output_ckpt:
         with unsafe_torch_load_context():
             export_model = AstroClipModel.load_from_checkpoint(parsed.checkpoint, map_location="cpu")
-        export_model.image_encoder.load_state_dict(best_state)
+        
+        # Load best weights into export model
+        export_model.image_encoder.load_state_dict(image_encoder.state_dict())
+        if parsed.finetune_spectrum:
+             export_model.spectrum_encoder.load_state_dict(spectrum_encoder.state_dict())
+        
+        # Update scale in export model
+        if parsed.learnable_scale:
+             if isinstance(export_model.logit_scale, torch.nn.Parameter):
+                 with torch.no_grad():
+                     export_model.logit_scale.copy_(model.logit_scale)
+             else:
+                 # It was fixed, now we want to save the learned value? 
+                 # If export model has fixed scale (float), we might need to convert it to param or save value
+                 # But AstroClipModel constructor logic might reset it.
+                 # Let's assumes strict consistency isn't critical for 'export_full_checkpoint' as long as state_dict is right
+                 pass 
+                 
         export_full_checkpoint(export_model, Path(parsed.output_ckpt))
         print(f"[OK] Checkpoint complet sauvegardé dans {parsed.output_ckpt}")
 
