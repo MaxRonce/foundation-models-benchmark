@@ -23,6 +23,12 @@ class FMBPaths:
     # Specific specialized paths
     dataset: Path
     base_weights: Path
+    
+    # Model specific base weights (can be configured separately)
+    base_weights_aion: Path
+    base_weights_astropt: Path
+    base_weights_astroclip: Path
+
     retrained_weights: Path
     nfs_weights: Path
     outliers: Path
@@ -105,6 +111,23 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
     # 2. Resolve requested paths
     dataset_path = resolve("dataset_path", "data")
     base_weights_path = resolve("base_weights_path", "checkpoints/base")
+    
+    # Resolve model specific weights, defaulting to base_weights/<model_name>
+    base_weights_aion = resolve("base_weights_path_aion", "") 
+    # Use empty default to trigger fallback logic? No, resolve joins with storage_root if relative.
+    # But we want default to be base_weights_path / "aion".
+    # Let's adjust logic.
+    
+    def resolve_optional(key: str, default_abs: Path) -> Path:
+        val = cfg.get(key)
+        if val:
+            return _p(val)
+        return default_abs
+
+    base_weights_aion = resolve_optional("base_weights_path_aion", base_weights_path / "aion")
+    base_weights_astropt = resolve_optional("base_weights_path_astropt", base_weights_path / "astropt")
+    base_weights_astroclip = resolve_optional("base_weights_path_astroclip", base_weights_path / "astroclip")
+
     retrained_weights_path = resolve("retrained_weights_path", "checkpoints/retrained")
     nfs_weights_path = resolve("nfs_weights_path", "checkpoints/nfs")
     outliers_path = resolve("outliers_path", "outputs/outliers")
@@ -120,6 +143,9 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
         storage_root=storage_root,
         dataset=dataset_path,
         base_weights=base_weights_path,
+        base_weights_aion=base_weights_aion,
+        base_weights_astropt=base_weights_astropt,
+        base_weights_astroclip=base_weights_astroclip,
         retrained_weights=retrained_weights_path,
         nfs_weights=nfs_weights_path,
         outliers=outliers_path,
