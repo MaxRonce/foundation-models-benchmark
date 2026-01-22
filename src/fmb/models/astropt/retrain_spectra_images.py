@@ -36,34 +36,39 @@ from torch.utils.data.distributed import DistributedSampler
 import matplotlib.pyplot as plt
 import numpy as np
 
-try:
-    import wandb
-    _WANDB_AVAILABLE = True
-except ImportError:
-    _WANDB_AVAILABLE = False
+import sys
+from pathlib import Path
+# Add src to pythonpath
+src_path = Path(__file__).resolve().parents[3]
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
 
 # CHANGED: Import from fmb.data instead of scratch
-from fmb.data.load_display_data_hsc import EuclidDESIDataset
+from fmb.data.load_display_data import EuclidDESIDataset
 from fmb.paths import load_paths
+
+# Add external/astroPT/src to path for astropt package
+astropt_path = Path(__file__).resolve().parents[4] / "external" / "astroPT" / "src"
+if str(astropt_path) not in sys.path:
+    sys.path.insert(0, str(astropt_path))
 
 # CHANGED: Ensure astropt imports work (try/except block from existing file)
 try:
     from astropt.model import GPT, GPTConfig, ModalityConfig, ModalityRegistry
 except ImportError:
-    import sys
-    from pathlib import Path
-    # Attempt to add external/astroPT to path if not installed
-    # Assumption: external/astroPT is 4 levels up from this file if in src/fmb/models/astropt
-    # But this file is now in src/fmb/models/astropt/retrain_spectra_images.py
-    # So relative path: ../../../../external/astroPT
-    external_path = Path(__file__).resolve().parents[4] / "external" / "astroPT"
-    if external_path.exists():
-        sys.path.append(str(external_path))
+    # If still fails, try the root astroPT folder if distinct
+    astropt_path_alt = Path(__file__).resolve().parents[4] / "astroPT" / "src"
+    if str(astropt_path_alt) not in sys.path:
+        sys.path.insert(0, str(astropt_path_alt))
     from astropt.model import GPT, GPTConfig, ModalityConfig, ModalityRegistry
 
 # CHANGED: Relative import to local euclid_desi_dataset package
 # Ensure src/fmb/models/astropt/euclid_desi_dataset exists and has multimodal_dataloader
-from .euclid_desi_dataset.multimodal_dataloader import multimodal_collate_fn, prepare_multimodal_batch
+try:
+    from fmb.models.astropt.euclid_desi_dataset.multimodal_dataloader import multimodal_collate_fn, prepare_multimodal_batch
+except ImportError:
+     # Fallback if running as module differently?
+     from .euclid_desi_dataset.multimodal_dataloader import multimodal_collate_fn, prepare_multimodal_batch
 
 
 class EuclidDESIMultimodalDataset(torch.utils.data.Dataset):
@@ -200,6 +205,9 @@ def parse_args() -> TrainingConfig:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Train AstroPT on Euclid images + DESI spectra")
     
+    parser.add_argument("--config", type=str, default=None, help="Path to YAML config file")
+    
+    # We use defaults from TrainingConfig for valid fallback
     parser.add_argument("--out-dir", default=TrainingConfig.out_dir)
     parser.add_argument("--train-split", default=TrainingConfig.train_split)
     parser.add_argument("--val-split", default=TrainingConfig.val_split)
@@ -212,9 +220,12 @@ def parse_args() -> TrainingConfig:
     parser.add_argument("--eval-iters", type=int, default=TrainingConfig.eval_iters)
     parser.add_argument("--log-interval", type=int, default=TrainingConfig.log_interval)
     parser.add_argument("--device", default=TrainingConfig.device, help="Device to use (cpu, cuda, etc.)")
-    parser.add_argument("--compile", action="store_true", default=False)
-    parser.add_argument("--no-compile", dest="compile", action="store_false")
-    parser.add_argument("--log-wandb", action="store_true", default=False)
+    
+    # Booleans are tricky. Default to None to detect if user specified it.
+    parser.add_argument("--compile", action="store_true", default=None)
+    parser.add_argument("--no-compile", dest="compile", action="store_false", default=None)
+    
+    parser.add_argument("--log-wandb", action="store_true", default=None)
     parser.add_argument("--wandb-project", default=TrainingConfig.wandb_project)
     parser.add_argument("--wandb-run-name", default=None)
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
@@ -223,24 +234,95 @@ def parse_args() -> TrainingConfig:
     
     args = parser.parse_args()
     
-    config = TrainingConfig()
-    config.out_dir = args.out_dir
-    config.train_split = args.train_split
-    config.val_split = args.val_split
-    config.batch_size = args.batch_size
-    config.gradient_accumulation_steps = args.grad_accum
-    config.num_workers = args.num_workers
-    config.image_size = args.image_size
-    config.max_iters = args.max_iters
-    config.eval_interval = args.eval_interval
-    config.eval_iters = args.eval_iters
-    config.log_interval = args.log_interval
-    config.device = args.device
-    config.compile = args.compile
-    config.log_via_wandb = args.log_wandb and _WANDB_AVAILABLE
-    config.wandb_project = args.wandb_project
-    config.wandb_run_name = args.wandb_run_name
-    config.cache_dir = args.cache_dir
+    # 1. Start with class defaults
+    config_dict = TrainingConfig().__dict__.copy()
+    
+    # 2. Update with YAML if provided
+    if args.config:
+        import yaml
+        with open(args.config, 'r') as f:
+            yaml_config = yaml.safe_load(f)
+            if yaml_config:
+                # Only update keys that exist in config_dict to avoid injection
+                for k, v in yaml_config.items():
+                    if k in config_dict:
+                        config_dict[k] = v
+                    else:
+                        print(f"Warning: Ignoring unknown config key from YAML: {k}")
+
+    # 3. Update with CLI args if they differ from class Defaults OR are explicitly provided (for booleans)
+    # Note: args.out_dir has default=TrainingConfig.out_dir.
+    # If user didn't allow, args.out_dir == TrainingConfig.out_dir.
+    # If YAML changed out_dir, we don't want to overwrite it with "default" args.out_dir.
+    # BUT we can't easily know if args.out_dir came from user or default.
+    # EXCEPT checking sys.argv, or setting defaults to None.
+    
+    # To properly support "YAML overrides Default, CLI overrides YAML", the argparse defaults should be None (or suppressed).
+    # But we set them above.
+    # Let's check against sys.argv for explicit overrides as a robust workaround.
+    import sys
+    
+    def is_arg_passed(name):
+        return any(arg.startswith(f"--{name}") for arg in sys.argv)
+
+    if is_arg_passed("out-dir"): config_dict["out_dir"] = args.out_dir
+    if is_arg_passed("train-split"): config_dict["train_split"] = args.train_split
+    if is_arg_passed("val-split"): config_dict["val_split"] = args.val_split
+    if is_arg_passed("batch-size"): config_dict["batch_size"] = args.batch_size
+    if is_arg_passed("grad-accum"): config_dict["gradient_accumulation_steps"] = args.grad_accum
+    if is_arg_passed("num-workers"): config_dict["num_workers"] = args.num_workers
+    if is_arg_passed("image-size"): config_dict["image_size"] = args.image_size
+    if is_arg_passed("max-iters"): config_dict["max_iters"] = args.max_iters
+    if is_arg_passed("eval-interval"): config_dict["eval_interval"] = args.eval_interval
+    if is_arg_passed("eval-iters"): config_dict["eval_iters"] = args.eval_iters
+    if is_arg_passed("log-interval"): config_dict["log_interval"] = args.log_interval
+    if is_arg_passed("device"): config_dict["device"] = args.device
+    if is_arg_passed("cache-dir"): config_dict["cache_dir"] = args.cache_dir
+    if is_arg_passed("wandb-project"): config_dict["wandb_project"] = args.wandb_project
+    if args.wandb_run_name: config_dict["wandb_run_name"] = args.wandb_run_name
+    
+    # Handle tri-state booleans (None, True, False)
+    if args.compile is not None:
+        config_dict["compile"] = args.compile
+    if args.log_wandb is not None:
+        config_dict["log_via_wandb"] = args.log_wandb
+
+    # Create config object
+    config = TrainingConfig(**config_dict)
+    
+    # Ensure types are correct (yaml might load scientific notation as string sometimes or if quotes were used)
+    try:
+        config.learning_rate = float(config.learning_rate)
+        config.min_lr = float(config.min_lr)
+        config.weight_decay = float(config.weight_decay)
+        config.grad_clip = float(config.grad_clip)
+        config.dropout = float(config.dropout)
+        
+        config.batch_size = int(config.batch_size)
+        config.gradient_accumulation_steps = int(config.gradient_accumulation_steps)
+        config.image_size = int(config.image_size)
+        config.image_patch_size = int(config.image_patch_size)
+        config.spectrum_patch_size = int(config.spectrum_patch_size)
+        config.spectrum_length = int(config.spectrum_length)
+        config.n_layer = int(config.n_layer)
+        config.n_head = int(config.n_head)
+        config.n_embd = int(config.n_embd)
+        config.block_size = int(config.block_size)
+        config.max_iters = int(config.max_iters)
+        config.warmup_iters = int(config.warmup_iters)
+        config.lr_decay_iters = int(config.lr_decay_iters)
+        config.eval_interval = int(config.eval_interval)
+        config.eval_iters = int(config.eval_iters)
+        config.log_interval = int(config.log_interval)
+    except ValueError as e:
+        print(f"Error casting config values: {e}")
+        # Proceeding hoping for the best or raising? Raising is safer.
+        raise e
+
+    # Validate WandB availability
+    if config.log_via_wandb and not _WANDB_AVAILABLE:
+        print("Warning: WandB requested but not available. Disabling.")
+        config.log_via_wandb = False
     
     # Handle resume arguments
     resume_path = None
@@ -408,11 +490,11 @@ def estimate_loss(model, train_loader, val_loader, config, modality_registry, de
                 continue
             
             # Debug: print inputs info
-            if i == 0:  # Only for first batch
-                print(f"Debug {split} inputs keys: {inputs.keys()}")
-                for key, val in inputs.items():
-                    if isinstance(val, torch.Tensor):
-                        print(f"  {key}: {val.shape}, dtype: {val.dtype}")
+            # if i == 0:  # Only for first batch
+            #     print(f"Debug {split} inputs keys: {inputs.keys()}")
+            #     for key, val in inputs.items():
+            #         if isinstance(val, torch.Tensor):
+            #             print(f"  {key}: {val.shape}, dtype: {val.dtype}")
             
             with ctx:
                 # Proper target preparation for autoregressive training
@@ -808,10 +890,16 @@ def main():
     model.train()
     iter_num = start_iter
     t0 = time.time()
+    t0_start = time.time()
     
+    # Convert loaders to iterators
     # Convert loaders to iterators
     train_iter = iter(train_loader)
     
+    from tqdm import tqdm
+    pbar = tqdm(total=config.max_iters, initial=start_iter, desc="Training", dynamic_ncols=True)
+    
+    micro_step = 0
     while iter_num < config.max_iters:
         # Set learning rate
         lr = get_lr(iter_num, config) if config.decay_lr else config.learning_rate
@@ -819,15 +907,16 @@ def main():
             param_group['lr'] = lr
         
         # Evaluation and checkpointing
-        if iter_num % config.eval_interval == 0 and master_process:
+        if iter_num % config.eval_interval == 0 and master_process and micro_step % config.gradient_accumulation_steps == 0:
+            # Only evaluate at the start of a macro-step to avoid breaking accumulation
             metrics = estimate_loss(model, train_loader, val_loader, config, modality_registry, device, ctx)
             train_loss = metrics["train"]["spectra"]  # Using spectra loss as representative
             val_loss = metrics["val"]["spectra"]
             
-            print(f"step {iter_num}: train loss {train_loss:.4f}, val loss {val_loss:.4f}, lr {lr:.2e}")
+            pbar.write(f"step {iter_num}: train loss {train_loss:.4f}, val loss {val_loss:.4f}, lr {lr:.2e}")
             
             # Print summary every now and then
-            if iter_num % (config.eval_interval * 5) == 0:
+            if iter_num > 0 and iter_num % (config.eval_interval * 5) == 0:
                  print_training_summary(iter_num, config.max_iters, best_val_loss, train_loss)
             
             # Log to wandb
@@ -845,14 +934,14 @@ def main():
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 save_checkpoint(model, optimizer, iter_num, best_val_loss, config, ddp, "ckpt_best.pt")
-                print(f"New best validation loss: {best_val_loss:.4f}")
+                pbar.write(f"New best validation loss: {best_val_loss:.4f}")
             
             # Regular checkpoint
             if config.always_save_checkpoint or (iter_num > 0 and iter_num % config.checkpoint_interval == 0):
                 save_checkpoint(model, optimizer, iter_num, best_val_loss, config, ddp, f"ckpt_{iter_num}.pt")
             
             # Visualize reconstructions
-            if iter_num % (config.eval_interval * 2) == 0:
+            if iter_num > 0 and iter_num % (config.eval_interval * 2) == 0:
                 visualize_reconstructions(model, val_loader, config, modality_registry, device, ctx, iter_num)
         
         # Training step
@@ -870,7 +959,7 @@ def main():
         )
         
         if not inputs:
-            print(f"Warning: Empty batch at iteration {iter_num}")
+            # print(f"Warning: Empty batch at iteration {iter_num}")
             continue
             
         with ctx:
@@ -890,8 +979,10 @@ def main():
         # Backward pass
         scaler.scale(loss).backward()
         
+        micro_step += 1
+        
         # Step optimizer
-        if (iter_num + 1) % config.gradient_accumulation_steps == 0:
+        if micro_step % config.gradient_accumulation_steps == 0:
             if config.grad_clip != 0.0:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
@@ -899,29 +990,56 @@ def main():
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
             iter_num += 1
+            pbar.update(1)
             
             # Log training step
             if iter_num % config.log_interval == 0 and master_process:
-                t1 = time.time()
-                dt = (t1 - t0) * 1000
                 loss_val = loss.item() * config.gradient_accumulation_steps
-                print(f"iter {iter_num}: loss {loss_val:.4f}, time {dt:.2f}ms")
+                pbar.set_postfix({"loss": f"{loss_val:.4f}", "lr": f"{lr:.2e}"})
                 
                 # Write to log file
                 if loss_log_file:
                     with open(loss_log_file, 'a') as f:
-                        f.write(f"{iter_num},{loss_val:.6f},,{lr:.2e},{dt:.2f}\n")
-                
-                t0 = t1
+                        f.write(f"{iter_num},{loss_val:.6f},,{lr:.2e},\n")
                 
     if master_process:
-        print("Training finished!")
+        pbar.write("Training finished!")
+        pbar.close()
+        
+        # Calculate final stats
+        total_time = time.time() - t0_start
+        hours = int(total_time // 3600)
+        minutes = int((total_time % 3600) // 60)
+        seconds = int(total_time % 60)
+        
+        # Write detailed summary to log file
+        if loss_log_file:
+            with open(loss_log_file, 'a') as f:
+                f.write("\n" + "="*80 + "\n")
+                f.write("TRAINING COMPLETE SUMMARY\n")
+                f.write("="*80 + "\n")
+                f.write(f"Total Duration: {hours:02d}:{minutes:02d}:{seconds:02d}\n")
+                f.write(f"Total Iterations: {iter_num}\n")
+                f.write(f"Best Validation Loss: {best_val_loss:.6f}\n")
+                f.write(f"Parameters: {model.get_num_params() / 1e6:.1f}M\n")
+                f.write("\nCONFIGURATION:\n")
+                for key, val in config.__dict__.items():
+                    f.write(f"{key}: {val}\n")
+                f.write("="*80 + "\n")
+        
+        # Final reconstruction visualization
+        print("Generating final reconstructions...")
+        try:
+            visualize_reconstructions(model, val_loader, config, modality_registry, device, ctx, iter_num)
+        except Exception as e:
+            print(f"Warning: Failed to generate final visualizations: {e}")
+            
         save_checkpoint(model, optimizer, iter_num, best_val_loss, config, ddp, "ckpt_final.pt")
         if config.log_via_wandb:
             wandb.finish()
     
-    destroy_process_group()
-
+    if ddp:
+        destroy_process_group()
 
 if __name__ == "__main__":
     main()

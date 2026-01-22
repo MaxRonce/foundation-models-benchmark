@@ -9,6 +9,9 @@ storage_root: ~/fmb_data
 
 # 1. Dataset Root (e.g. Arrow cache or raw data)
 dataset_path: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data
+dataset_path_test : C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data\msiudek__astroPT_euclid_Q1_desi_dr1_dataset__test
+dataset_path_train : C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data\msiudek__astroPT_euclid_Q1_desi_dr1_dataset__train
+dataset_hf_id: msiudek/astroPT_euclid_Q1_desi_dr1_dataset
 
 # 2. Base Model Weights (Pretrained Foundation Models)
 base_weights_path: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data\weights

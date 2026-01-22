@@ -1,0 +1,41 @@
+# AstroCLIP Retraining Configuration
+
+# Output directory (will use fmb.paths if not specified or override)
+# out_dir: null
+
+# Data
+train_split: "train"
+val_split: "test"
+batch_size: 32
+accumulate_steps: 1
+num_workers: 4
+image_size: 144
+max_samples: null
+focus_high_z: false # Not specified in user command, false by default? 
+include_wavelength: false 
+
+# Model
+checkpoint: "data/weights/weights_astroclip/astroclip.ckpt"
+learnable_scale: true
+finetune_spectrum: true
+unfreeze_backbone_blocks: 0 # default
+
+# Preprocessing
+slice_length: 7700 # Default in script
+spectrum_norm: "zscore"
+
+# Optimization
+learning_rate: 3e-6 # Default
+max_epochs: 2
+weight_decay: 5e-4
+grad_clip: 1.0
+warmup_steps: 0
+min_delta: 1e-4
+patience: 3
+
+# System
+device: "cuda"
+amp: true
+log_interval: 20
+log_via_wandb: false # Optional, kept false for now
+wandb_project: "astroclip-retrain"
