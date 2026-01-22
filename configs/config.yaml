@@ -1,0 +1,30 @@
+# FMB Configuration
+# Define paths for datasets, models, and outputs.
+
+# Base storage root (used as default base for other paths)
+storage_root: ~/fmb_data
+
+# --- Specific Paths ---
+# You can override these individually.
+
+# 1. Dataset Root (e.g. Arrow cache or raw data)
+dataset_path: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data
+
+# 2. Base Model Weights (Pretrained Foundation Models)
+base_weights_path: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data\weights
+base_weights_path_aion : C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data\weights\weights_aion
+base_weights_path_astropt : C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data\weights\weights_astropt
+base_weights_path_astroclip : C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\data\weights\weights_astroclip
+
+# 3. Retrained Model Weights (Output of retraining step)
+retrained_weights_path: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\runs\weights\models
+
+# 4. Normalizing Flows Weights (Trained on embeddings)
+nfs_weights_path: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\runs\weights\NFs
+
+# 5. Outliers CSVs (Detection outputs)
+outliers_path: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\runs\weights\outliers
+
+# 6. Analysis and Visualization Exports
+analysis_path: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\runs\weights\images
+

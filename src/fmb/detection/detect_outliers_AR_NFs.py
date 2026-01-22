@@ -1,11 +1,11 @@
+#!/usr/bin/env python3
 """
-Script to detect outliers using Normalizing Flows (NFs).
-It trains a Normalizing Flow model on the embeddings to learn the density distribution.
-Objects with low log-likelihoods are considered anomalies.
-Produces a CSV with anomaly scores for each object.
+Script to detect outliers using Autoregressive Normalizing Flows (Masked Autoregressive Flows).
+Supports detecting anomalies from multiple embedding sources (AION, AstroPT, AstroCLIP).
+Generates separate anomaly score CSVs for each source.
 
 Usage:
-    python -m scratch.detect_outliers_NFs \\
+    python -m scratch.detect_outliers_AR_NFs \\
         --aion-embeddings /path/to/aion.pt \\
         --output-prefix outputs/anomaly_scores
 """
@@ -13,7 +13,7 @@ import argparse
 import csv
 import random
 from pathlib import Path
-from typing import Iterable, Sequence, Optional, List
+from typing import Iterable, Sequence, Optional, Dict, List
 
 import numpy as np
 import torch
@@ -28,13 +28,14 @@ except ImportError as exc:
     ) from exc
 
 
+# Default keys per model type
 KEYS_AION = ["embedding_hsc_desi", "embedding_hsc", "embedding_spectrum"]
 KEYS_ASTROPT = ["embedding_images", "embedding_spectra", "embedding_joint"]
 KEYS_ASTROCLIP = ["embedding_images", "embedding_spectra", "embedding_joint"]
-EMBEDDING_KEYS = sorted(list(set(KEYS_AION + KEYS_ASTROPT + KEYS_ASTROCLIP)))
 
 
 def load_records(path: Path) -> list[dict]:
+    print(f"[info] Loading {path} ...")
     data = torch.load(path, map_location="cpu")
     if isinstance(data, list):
         return data
@@ -46,30 +47,43 @@ def load_records(path: Path) -> list[dict]:
 def extract_embeddings(records: Sequence[dict], key: str) -> tuple[np.ndarray, list[str]]:
     vectors: list[np.ndarray] = []
     object_ids: list[str] = []
+    
+    # Pre-check if key exists in first record to avoid iteration if missing
+    if records and key not in records[0]:
+         # Some files might have mixed records, but usually keys are consistent.
+         # We'll scan anyway, but this effectively skips if key is totally absent.
+         pass
+
+    found_any = False
     for rec in records:
         tensor = rec.get(key)
         if tensor is None:
             continue
+        found_any = True
+        
         if isinstance(tensor, torch.Tensor):
             # Force a CPU copy and a numpy copy to break any shared memory storage
             array = tensor.detach().cpu().numpy().copy()
         else:
             array = np.asarray(tensor).copy()
         
-        # Flatten if needed
+        # Flatten if needed (e.g. 1, D -> D)
         if array.ndim > 1:
             array = array.flatten()
             
         vectors.append(array)
         object_id = rec.get("object_id", "")
         object_ids.append(str(object_id))
-    if not vectors:
-        raise ValueError(f"No embeddings found for key '{key}'")
+
+    if not found_any:
+        # Return empty if key not found, caller decides if it's an error
+        return np.array([]), []
+
     stacked = np.stack(vectors, axis=0)
     if stacked.ndim != 2:
-        raise ValueError(
-            f"Expected embeddings for key '{key}' to be 2D (N, D), got shape {stacked.shape}",
-        )
+         # If we somehow got here with weird shapes
+         raise ValueError(f"Embeddings for key '{key}' have inconsistent or wrong shapes: {stacked.shape}")
+         
     return stacked, object_ids
 
 
@@ -81,27 +95,23 @@ def set_random_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def build_flow(
+def build_ar_flow(
     dim: int,
     hidden_features: int,
     num_transforms: int,
 ) -> nn.Module:
-    if dim < 2 or dim % 2 != 0:
-        raise RuntimeError(
-            f"Embedding dimension {dim} is not supported for RealNVP-style coupling (needs an even dimension ≥ 2).",
-        )
     base = nf.distributions.base.DiagGaussian(dim)
     flows: list[nn.Module] = []
-    cond_dim = dim // 2
-    transformed_dim = dim - cond_dim
+    
     for _ in range(num_transforms):
-        net = nf.nets.MLP(
-            [cond_dim, hidden_features, hidden_features, transformed_dim * 2],
-            init_zeros=True,
-        )
-        flows.append(nf.flows.AffineCouplingBlock(net, scale_map="sigmoid"))
+        # Masked Affine Autoregressive Flow
+        # features=dim, hidden_features=hidden_features
+        flows.append(nf.flows.MaskedAffineAutoregressive(features=dim, hidden_features=hidden_features))
+        # Permutation to mix dimensions
         flows.append(nf.flows.Permute(dim, mode="swap"))
-        flows.append(nf.flows.ActNorm((dim,)))
+        # ActNorm for stability
+        flows.append(nf.flows.ActNorm(dim))
+        
     return nf.NormalizingFlow(base, flows)
 
 
@@ -126,53 +136,74 @@ def train_flow(
     flow.to(device)
     optimizer = torch.optim.Adam(flow.parameters(), lr=lr, weight_decay=weight_decay)
     flow.train()
-    for epoch in range(1, epochs + 1):
+    
+    from tqdm import tqdm
+    
+    # Epoch loop with progress bar
+    epoch_pbar = tqdm(range(1, epochs + 1), desc="Training Epochs", unit="epoch")
+    for epoch in epoch_pbar:
         total_loss = 0.0
         total_items = 0
         skipped_batches = 0
-        for (batch,) in loader:
+        
+        # Batch loop with progress bar
+        batch_pbar = tqdm(loader, desc=f"Epoch {epoch}", leave=False, unit="batch")
+        for (batch,) in batch_pbar:
             batch = batch.to(device)
-            log_prob = flow.log_prob(batch)
-            if not torch.isfinite(log_prob).all():
-                optimizer.zero_grad(set_to_none=True)
-                skipped_batches += 1
-                continue
-            loss = -log_prob.mean()
+            loss = flow.forward_kld(batch)
+            
             if not torch.isfinite(loss):
                 optimizer.zero_grad(set_to_none=True)
                 skipped_batches += 1
                 continue
+                
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
+            
             if grad_clip is not None and grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(flow.parameters(), grad_clip)
+                
             optimizer.step()
+            
+            # Update batch pbar with current batch loss
+            batch_pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            
             total_loss += loss.item() * batch.size(0)
             total_items += batch.size(0)
+            
         avg_loss = total_loss / max(total_items, 1) if total_items > 0 else float("nan")
         
+        # Update epoch pbar description with latest average loss
+        epoch_pbar.set_postfix({"avg_loss": f"{avg_loss:.4f}"})
+        
         if not np.isfinite(avg_loss):
-            print(f"[error] epoch {epoch:03d}: loss is NaN/inf; stopping training for this key.")
-            break
-        if skipped_batches:
-            print(
-                f"[warn] epoch {epoch:03d}: skipped {skipped_batches}/{len(loader)} batches "
-                "due to non-finite log_prob or loss",
-            )
-            if skipped_batches == len(loader):
-                print(
-                    "[error] all batches failed in this epoch; stopping early. "
-                    "Try lowering --lr or decreasing --clip-sigma for stronger clipping.",
-                )
-                break
-        if epoch == 1 or epoch == epochs or (log_every > 0 and epoch % log_every == 0):
-            print(f"[{flow.__class__.__name__}] epoch {epoch:03d}/{epochs:03d} | loss={avg_loss:.4f}")
+             tqdm.write(f"[error] Epoch {epoch}: Loss is NaN/Inf. Stopping training for this key.")
+             break
+
+        if skipped_batches == len(loader):
+             tqdm.write(f"[warn] Epoch {epoch}: All batches skipped (NaN/Inf).")
+             break
+
+        if log_every > 0 and (epoch == 1 or epoch == epochs or epoch % log_every == 0):
+            # Write to stdout as well to keep permanent record
+            # Use write() to avoid interfering with progress bars
+            tqdm.write(f"[{flow.__class__.__name__}] epoch {epoch:03d}/{epochs:03d} | loss={avg_loss:.4f}")
+            
     flow.eval()
 
 
 def compute_log_probs(flow: nn.Module, data: torch.Tensor, device: torch.device) -> np.ndarray:
+    loader = DataLoader(TensorDataset(data), batch_size=2048, shuffle=False)
+    log_probs_list = []
+    
+    flow.eval()
     with torch.no_grad():
-        return flow.log_prob(data.to(device)).cpu().numpy()
+        for (batch,) in loader:
+            batch = batch.to(device)
+            lp = flow.log_prob(batch)
+            log_probs_list.append(lp.cpu().numpy())
+            
+    return np.concatenate(log_probs_list)
 
 
 def compute_sigma(values: np.ndarray) -> np.ndarray:
@@ -190,12 +221,13 @@ def filter_nonfinite_rows(
     mask = torch.isfinite(tensor).all(dim=1)
     if mask.all():
         return tensor, list(object_ids)
+    
     filtered_tensor = tensor[mask]
     filtered_ids = [obj for obj, keep in zip(object_ids, mask.tolist()) if keep]
     dropped = len(object_ids) - len(filtered_ids)
-    print(f"[warn] dropped {dropped} rows containing NaN/inf values before training")
-    if len(filtered_tensor) == 0:
-        raise SystemExit("All rows were removed due to non-finite values; cannot train flow.")
+    if dropped > 0:
+        print(f"[warn] dropped {dropped} rows containing NaN/inf values")
+        
     return filtered_tensor, filtered_ids
 
 
@@ -207,9 +239,6 @@ def clip_embeddings_by_sigma(tensor: torch.Tensor, sigma: float) -> torch.Tensor
     lower = mean - sigma * std
     upper = mean + sigma * std
     clipped = torch.clamp(tensor, min=lower, max=upper)
-    num_rows_clipped = int((clipped != tensor).any(dim=1).sum().item())
-    if num_rows_clipped > 0:
-        print(f"[info] clipped {num_rows_clipped} rows outside ±{sigma:.1f}σ to stabilize flow training")
     return clipped
 
 
@@ -223,6 +252,7 @@ def collate_rows(
     order = np.argsort(-sigma_scores)
     ranks = np.empty_like(order)
     ranks[order] = np.arange(1, len(order) + 1)
+    
     rows: list[dict[str, str | float | int]] = []
     for idx, object_id in enumerate(object_ids):
         rows.append(
@@ -255,74 +285,144 @@ def standardize_tensor(tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor
     return standardized, mean, std
 
 
-from fmb.paths import load_paths
+def process_file_and_keys(
+    fpath: Path,
+    possible_keys: List[str],
+    args: argparse.Namespace,
+    model_name: str
+) -> List[dict]:
+    
+    if not fpath.exists():
+        print(f"[error] File not found: {fpath}")
+        return []
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    paths = load_paths()
+    records = load_records(fpath)
+    all_rows = []
+    
+    # Identify which keys actually exist
+    valid_keys = []
+    # Peek at first record
+    if records:
+        first_rec = records[0]
+        for k in possible_keys:
+            if k in first_rec:
+                valid_keys.append(k)
+    
+    if not valid_keys:
+        print(f"[warn] None of the expected keys {possible_keys} found in {fpath}. Skipping.")
+        return []
+        
+    extracted_data = {}
+    for key in valid_keys:
+        print(f"      Extracting key: '{key}' ...")
+        embeddings_array, object_ids = extract_embeddings(records, key)
+        extracted_data[key] = (embeddings_array, object_ids)
+        
+    # Free the huge records object from memory immediately
+    del records
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print(f"[debug] Memory after releasing records: {torch.cuda.memory_allocated()/1e9:.2f} GB allocated")
+
+    for key in valid_keys:
+        print(f"\n---> Processing {model_name} key: '{key}'")
+        embeddings_array, object_ids = extracted_data[key]
+        
+        # Free from dictionary to allow GC if needed, though we iterate
+        # extracted_data[key] = None 
+
+        
+        if len(embeddings_array) == 0:
+            print(f"[warn] No embeddings extracted for {key}")
+            continue
+
+        embeddings_tensor = torch.from_numpy(embeddings_array).float()
+        embeddings_tensor, object_ids = filter_nonfinite_rows(embeddings_tensor, object_ids)
+        
+        if len(embeddings_tensor) < 2:
+            print(f"[warn] Not enough data for {key}")
+            continue
+            
+        if not args.no_standardize:
+            embeddings_tensor, _, _ = standardize_tensor(embeddings_tensor)
+            
+        embeddings_tensor = clip_embeddings_by_sigma(embeddings_tensor, args.clip_sigma)
+        
+        # Build Flow
+        dim = embeddings_tensor.shape[1]
+        flow = build_ar_flow(dim, args.hidden_features, args.num_transforms)
+        
+        print(f"[{key}] Training AR Flow (MAF) dim={dim}, hidden={args.hidden_features}...")
+        train_flow(
+            flow=flow,
+            data=embeddings_tensor,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            lr=args.lr,
+            device=torch.device(args.device),
+            log_every=args.log_every,
+            grad_clip=args.grad_clip,
+            weight_decay=args.weight_decay,
+        )
+        
+        log_probs = compute_log_probs(flow, embeddings_tensor, torch.device(args.device))
+        rows = collate_rows(object_ids, key, log_probs)
+        all_rows.extend(rows)
+        
+    return all_rows
+
+
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train a normalizing-flow density model on embeddings and compute anomaly scores.",
+        description="Train Autoregressive Flows (MAF) for anomaly detection on multiple embeddings."
     )
-    # New inputs
+    
+    # Inputs
     parser.add_argument("--aion-embeddings", type=str, help="Path to AION embeddings file")
     parser.add_argument("--astropt-embeddings", type=str, help="Path to AstroPT embeddings file")
     parser.add_argument("--astroclip-embeddings", type=str, help="Path to AstroCLIP embeddings file")
     
-    # Old input kept for compatibility but optional now if others provided
-    parser.add_argument("--input", help="Path to embeddings .pt file (legacy single-file mode)")
-
-    default_prefix = str(paths.outliers / "anomaly_scores")
-    parser.add_argument("--output-prefix", default=default_prefix, 
+    # Output
+    parser.add_argument("--output-prefix", default="outputs/anomaly_scores", 
                         help="Prefix for output CSVs (e.g. 'outputs/scores' -> 'outputs/scores_aion.csv')")
     parser.add_argument("--output-csv", help="Legacy argument, ignored if inputs provided separately, or used as prefix fallback.")
 
-    parser.add_argument(
-        "--embedding-key",
-        choices=EMBEDDING_KEYS,
-        nargs="+",
-        help="Legacy: Embedding key(s) for --input. Defaults to every available key.",
-    )
-    parser.add_argument("--epochs", type=int, default=200, help="Training epochs for the flow model")
-    parser.add_argument("--batch-size", type=int, default=512, help="Batch size during flow training")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate for flow training")
-    parser.add_argument("--num-transforms", type=int, default=6, help="Number of coupling blocks in the flow")
-    parser.add_argument("--hidden-features", type=int, default=256, help="Hidden width in coupling networks")
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="Torch device to use")
-    parser.add_argument("--random-seed", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument(
-        "--log-every",
-        type=int,
-        default=25,
-        help="Log average loss every N epochs (always logs on the first and last epoch)",
-    )
-    parser.add_argument(
-        "--grad-clip",
-        type=float,
-        default=5.0,
-        help="Gradient clipping value (L2 norm). Set to 0 to disable.",
-    )
-    parser.add_argument(
-        "--weight-decay",
-        type=float,
-        default=1e-5,
-        help="Weight decay to apply in the Adam optimizer.",
-    )
-    parser.add_argument(
-        "--no-standardize",
-        action="store_true",
-        help="Disable per-feature standardization before training the flow.",
-    )
-    parser.add_argument(
-        "--clip-sigma",
-        type=float,
-        default=8.0,
-        help="Clip embeddings to mean ± sigma·std to avoid NF instabilities. Set <=0 to disable.",
-    )
-    return parser.parse_args(argv)
+    # Training hyperparams
+    parser.add_argument("--epochs", type=int, default=200, help="Training epochs")
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--num-transforms", type=int, default=6, help="Number of MAF steps")
+    parser.add_argument("--hidden-features", type=int, default=256, help="Hidden width")
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--random-seed", type=int, default=42)
+    parser.add_argument("--log-every", type=int, default=25)
+    parser.add_argument("--grad-clip", type=float, default=5.0)
+    parser.add_argument("--weight-decay", type=float, default=1e-5)
+    parser.add_argument("--no-standardize", action="store_true")
+    parser.add_argument("--clip-sigma", type=float, default=8.0)
+    parser.add_argument("--pca-components", type=int, default=0, 
+                        help="Reduce dimensions with PCA to this many components (0 = disabled). Recommended for high-dim data.")
 
+    return parser.parse_args()
+
+def apply_pca(tensor: torch.Tensor, n_components: int) -> tuple[torch.Tensor, object]:
+    from sklearn.decomposition import PCA
+    print(f"      [PCA] Fitting PCA with n_components={n_components} on shape {tensor.shape}...")
+    # sklearn PCA expects numpy
+    data_np = tensor.cpu().numpy()
+    pca = PCA(n_components=n_components)
+    transformed_np = pca.fit_transform(data_np)
+    
+    explained = pca.explained_variance_ratio_.sum()
+    print(f"      [PCA] Explained variance: {explained:.4f}")
+    
+    return torch.from_numpy(transformed_np).float(), pca
 
 def process_file_and_keys(
     fpath: Path,
-    possible_keys: Optional[List[str]],
+    possible_keys: List[str],
     args: argparse.Namespace,
     model_name: str
 ) -> List[dict]:
@@ -335,6 +435,8 @@ def process_file_and_keys(
     all_rows = []
     
     # --- ASTROPT SPECIAL HANDLING ---
+    # If we are processing AstroPT and 'embedding_joint' is requested/possible but not in records,
+    # try to synthesize it from images and spectra.
     if model_name == "astropt" and records:
         has_images = "embedding_images" in records[0]
         has_spectra = "embedding_spectra" in records[0]
@@ -347,8 +449,11 @@ def process_file_and_keys(
                 img = rec.get("embedding_images")
                 spec = rec.get("embedding_spectra")
                 if img is not None and spec is not None:
+                    # Ensure numpy or torch
                     if isinstance(img, torch.Tensor): img = img.cpu().numpy()
                     if isinstance(spec, torch.Tensor): spec = spec.cpu().numpy()
+                    
+                    # Flatten if necessary (though usually 1D here)
                     if img.ndim > 1: img = img.flatten()
                     if spec.ndim > 1: spec = spec.flatten()
                     
@@ -359,46 +464,38 @@ def process_file_and_keys(
 
     # Identify which keys actually exist
     valid_keys = []
-    # If explicit keys provided (legacy mode), check those
-    if possible_keys:
-        candidates = possible_keys
-    else:
-        candidates = []
-        if records:
-            candidates = list(records[0].keys())
-
-    # Filter candidates based on what's actually in file
+    # Peek at first record
     if records:
         first_rec = records[0]
-        for k in candidates:
-             if k in first_rec:
-                 valid_keys.append(k)
-
-    # For safety, intersecting with provided possible_keys if not None
-    if possible_keys:
-        valid_keys = [k for k in valid_keys if k in possible_keys]
-
+        for k in possible_keys:
+            if k in first_rec:
+                valid_keys.append(k)
+    
     if not valid_keys:
-         print(f"[warn] None of the expected keys {possible_keys} found in {fpath}. Skipping.")
-         return []
-
+        print(f"[warn] None of the expected keys {possible_keys} found in {fpath}. Skipping.")
+        return []
+        
     extracted_data = {}
     for key in valid_keys:
         print(f"      Extracting key: '{key}' ...")
         embeddings_array, object_ids = extract_embeddings(records, key)
         extracted_data[key] = (embeddings_array, object_ids)
         
+    # Free the huge records object from memory immediately
     del records
     import gc
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        print(f"[debug] Memory after releasing records: {torch.cuda.memory_allocated()/1e9:.2f} GB allocated")
 
     for key in valid_keys:
-        print(f"\\n---> Processing {model_name} key: '{key}'")
+        print(f"\n---> Processing {model_name} key: '{key}'")
         embeddings_array, object_ids = extracted_data[key]
         
-        if len(embeddings_array) == 0: continue
+        if len(embeddings_array) == 0:
+            print(f"[warn] No embeddings extracted for {key}")
+            continue
 
         embeddings_tensor = torch.from_numpy(embeddings_array).float()
         embeddings_tensor, object_ids = filter_nonfinite_rows(embeddings_tensor, object_ids)
@@ -406,23 +503,27 @@ def process_file_and_keys(
         if len(embeddings_tensor) < 2:
             print(f"[warn] Not enough data for {key}")
             continue
-
+            
         if not args.no_standardize:
-            embeddings_tensor, mean, std = standardize_tensor(embeddings_tensor)
-            print(f"[{key}] standardized embeddings (feature mean≈{mean.mean():.4f}, feature std≈{std.mean():.4f})")
+            embeddings_tensor, _, _ = standardize_tensor(embeddings_tensor)
             
         embeddings_tensor = clip_embeddings_by_sigma(embeddings_tensor, args.clip_sigma)
-        embeddings_tensor, object_ids = filter_nonfinite_rows(embeddings_tensor, object_ids)
         
-        if len(embeddings_tensor) < 2: continue
+        # Apply PCA if requested
+        if args.pca_components > 0:
+            if args.pca_components >= embeddings_tensor.shape[1]:
+                 print(f"[info] Skipping PCA: requested {args.pca_components} >= current dim {embeddings_tensor.shape[1]}")
+            else:
+                 embeddings_tensor, _ = apply_pca(embeddings_tensor, args.pca_components)
+                 # Re-standardize after PCA? Usually PCA output is centered but variances differ.
+                 # Normalizing Flows often like unit variance, so let's re-standardize
+                 embeddings_tensor, _, _ = standardize_tensor(embeddings_tensor)
         
-        flow = build_flow(
-            dim=embeddings_tensor.shape[1],
-            hidden_features=args.hidden_features,
-            num_transforms=args.num_transforms,
-        )
-        print(f"[{key}] training flow with dim={embeddings_tensor.shape[1]}, num_transforms={args.num_transforms}, hidden={args.hidden_features}")
+        # Build Flow
+        dim = embeddings_tensor.shape[1]
+        flow = build_ar_flow(dim, args.hidden_features, args.num_transforms)
         
+        print(f"[{key}] Training AR Flow (MAF) dim={dim}, hidden={args.hidden_features}...")
         train_flow(
             flow=flow,
             data=embeddings_tensor,
@@ -431,7 +532,7 @@ def process_file_and_keys(
             lr=args.lr,
             device=torch.device(args.device),
             log_every=args.log_every,
-            grad_clip=None if args.grad_clip is not None and args.grad_clip <= 0 else args.grad_clip,
+            grad_clip=args.grad_clip,
             weight_decay=args.weight_decay,
         )
         
@@ -442,10 +543,10 @@ def process_file_and_keys(
     return all_rows
 
 
-def main(argv: Sequence[str] | None = None) -> None:
-    args = parse_args(argv)
+def main() -> None:
+    args = parse_args()
     set_random_seed(args.random_seed)
-
+    
     tasks = []
     if args.aion_embeddings:
         tasks.append(("aion", args.aion_embeddings, KEYS_AION))
@@ -453,19 +554,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         tasks.append(("astropt", args.astropt_embeddings, KEYS_ASTROPT))
     if args.astroclip_embeddings:
         tasks.append(("astroclip", args.astroclip_embeddings, KEYS_ASTROCLIP))
-    
-    # Legacy fallback
-    if not tasks and args.input:
-        legacy_keys = args.embedding_key or EMBEDDING_KEYS
-        # treat as "legacy" named source, output to output_csv or prefix_legacy
-        rows = process_file_and_keys(Path(args.input), legacy_keys, args, "legacy")
-        if rows:
-             out_path = Path(args.output_csv) if args.output_csv else Path(f"{args.output_prefix}_legacy.csv")
-             save_scores_csv(out_path, rows)
-        return
-
-    if not tasks:
-        print("[error] No input files provided. Use --aion-embeddings, --input, etc.")
+        
+    if not tasks and args.output_csv:
+        print("[error] No embedding inputs provided. Use --aion-embeddings, --astropt-embeddings, etc.")
         return
 
     for name, path_str, keys_list in tasks:
@@ -478,7 +569,6 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"[success] Saved {len(rows)} scores to {out_path}")
         else:
             print(f"[warn] No results generated for {name}.")
-
 
 if __name__ == "__main__":
     main()

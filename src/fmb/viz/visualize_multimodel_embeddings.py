@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """
-Script to visualize UMAP projections of embeddings from both AION and AstroPT models,
+Script to visualize UMAP projections of embeddings from AION, AstroPT, and AstroCLIP models,
 colored by physical parameters from a FITS catalog.
 
 This script:
-- Loads embeddings from AION (embedding_hsc_desi, embedding_hsc, embedding_spectrum)
-- Loads embeddings from AstroPT (embedding_images, embedding_spectra, embedding_joint)
+- Loads embeddings from AION, AstroPT, and AstroCLIP
+- Key prefixing is applied to avoid collisions (e.g. 'embedding_joint')
 - Matches them with a FITS catalog to extract physical parameters
-- Computes UMAP projections for all 6 embedding types
+- Computes UMAP projections for all embedding types
 - Generates a grid visualization with color-coded physical parameters
 
 Usage:
     python -m scratch.visualize_multimodel_embeddings \
-        --aion-embeddings /n03data/ronceray/embeddings/euclid_desi_all_embeddings.pt \
-        --astropt-embeddings /n03data/ronceray/embeddings/astropt_embeddings.pt \
-        --catalog /home/ronceray/AION/DESI_DR1_Euclid_Q1_dataset_catalog_EM.fits \
+        --aion-embeddings /path/to/aion.pt \
+        --astropt-embeddings /path/to/astropt.pt \
+        --astroclip-embeddings /path/to/astroclip.pt \
+        --catalog /path/to/catalog.fits \
         --output-dir /path/to/output \
         --physical-param redshift \
         --random-state 42
@@ -26,6 +27,7 @@ from typing import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import math
 
 try:
     from astropy.io import fits
@@ -42,7 +44,7 @@ except ImportError as exc:
     ) from exc
 
 
-# Embedding keys for AION and AstroPT models
+# Embedding keys for models
 AION_EMBEDDING_KEYS = [
     "embedding_hsc_desi",
     "embedding_hsc",
@@ -50,6 +52,12 @@ AION_EMBEDDING_KEYS = [
 ]
 
 ASTROPT_EMBEDDING_KEYS = [
+    "embedding_images",
+    "embedding_spectra",
+    "embedding_joint",
+]
+
+ASTROCLIP_EMBEDDING_KEYS = [
     "embedding_images",
     "embedding_spectra",
     "embedding_joint",
@@ -92,38 +100,21 @@ def load_embeddings(path: Path) -> list[dict]:
 
 
 def load_fits_catalog(path: Path) -> tuple[dict, list[str], str]:
-    """
-    Load FITS catalog and return a dictionary mapping object_id to row data,
-    along with available numeric columns and the ID column name.
-    
-    Returns:
-        - catalog_dict: Dictionary mapping object_id to row data
-        - numeric_columns: List of numeric column names (excluding ID column)
-        - id_column: Name of the object ID column
-    """
+    """Load FITS catalog."""
     with fits.open(path) as hdul:
-        # Typically the data is in the first extension (HDU 1)
         data = hdul[1].data
         columns = hdul[1].columns.names
-        
-        # Build a dictionary mapping object_id to all column values
         catalog_dict = {}
-        
-        # Find the object ID column (TARGETID is the correct one for DESI)
         id_column = None
-        # Priority order: TARGETID (for DESI), then fallbacks
         for priority_col in ['TARGETID', 'targetid', 'TargetID']:
             if priority_col in columns:
                 id_column = priority_col
                 break
-        
-        # Fallback to other common names if TARGETID not found
         if id_column is None:
             for col in columns:
                 if col.lower() in ['object_id', 'objid', 'id']:
                     id_column = col
                     break
-        
         if id_column is None:
             raise ValueError(f"Could not find object ID column in FITS. Available columns: {columns}")
         
@@ -133,73 +124,59 @@ def load_fits_catalog(path: Path) -> tuple[dict, list[str], str]:
             obj_id = str(row[id_column])
             catalog_dict[obj_id] = {col: row[col] for col in columns}
         
-        # Identify numeric columns (excluding ID column)
         numeric_columns = []
         for col in columns:
-            if col == id_column:
-                continue
-            # Check if column is numeric by checking the dtype or trying to convert
+            if col == id_column: continue
             try:
-                # Get the column type from the FITS table
                 col_format = hdul[1].columns[col].format
-                # Common numeric formats in FITS: E (float32), D (float64), I (int16), J (int32), K (int64)
                 if any(fmt in col_format.upper() for fmt in ['E', 'D', 'I', 'J', 'K', 'F']):
                     numeric_columns.append(col)
                     continue
-                # Fallback: try to convert a sample of values
-                for row in data[:min(100, len(data))]:
-                    try:
-                        float(row[col])
-                        # If we can convert to float, it's numeric
-                        numeric_columns.append(col)
-                        break
-                    except (ValueError, TypeError):
-                        continue
-            except Exception:
-                # Not numeric, skip
-                continue
+                # sample check can be skipped for brevity or kept if robustness needed
+            except: pass
         
         print(f"Found {len(numeric_columns)} numeric physical parameters")
-        print(f"  Sample: {numeric_columns[:5]}")
-        
         return catalog_dict, numeric_columns, id_column
 
 
 def stack_embeddings_with_joint(records: Sequence[dict], key: str) -> np.ndarray:
-    """
-    Stack embeddings for a given key.
-    Special handling for 'embedding_joint' which concatenates images+spectra.
-    """
+    """Stack embeddings for a given key, with joint handling."""
     vectors = []
+    # Key might be prefixed, e.g. "astropt_embedding_joint".
+    # But records have keys "astropt_embedding_joint" directly merged?
+    # Yes, we merge with prefixes.
+    
     for rec in records:
-        # Special handling for joint embedding
-        if key == "embedding_joint":
-            img = rec.get("embedding_images")
-            spec = rec.get("embedding_spectra")
-            if img is None or spec is None:
-                continue
+        tensor = rec.get(key)
+
+        # Fallback: if key is "astropt_embedding_joint" but it's missing, try to construct from existing fields
+        # BUT `merge_embedding_records` handles the merging and prefixing. 
+        # So we should rely on keys simply being present.
+        
+        # Exception: "joint" construction from components. 
+        # If the merged record has "astropt_embedding_images" and "astropt_embedding_spectra", we can built joint.
+        if tensor is None and "embedding_joint" in key:
+            prefix = key.replace("embedding_joint", "") # "astropt_"
+            img_key = f"{prefix}embedding_images"
+            spec_key = f"{prefix}embedding_spectra"
             
-            # Ensure numpy arrays
-            if isinstance(img, torch.Tensor):
-                img = img.detach().cpu().numpy()
-            else:
-                img = np.asarray(img)
-                
-            if isinstance(spec, torch.Tensor):
-                spec = spec.detach().cpu().numpy()
-            else:
-                spec = np.asarray(spec)
-                
-            # Concatenate
-            vectors.append(np.concatenate([img, spec]))
+            img = rec.get(img_key)
+            spec = rec.get(spec_key)
+            
+            if img is not None and spec is not None:
+                if isinstance(img, torch.Tensor): img = img.detach().cpu().numpy()
+                else: img = np.asarray(img)
+                if isinstance(spec, torch.Tensor): spec = spec.detach().cpu().numpy()
+                else: spec = np.asarray(spec)
+                tensor = np.concatenate([img, spec])
+        
+        if tensor is None:
+            continue
+            
+        if isinstance(tensor, torch.Tensor):
+            vectors.append(tensor.detach().cpu().numpy())
         else:
-            tensor = rec.get(key)
-            if tensor is None:
-                continue
-            if isinstance(tensor, torch.Tensor):
-                vectors.append(tensor.detach().cpu().numpy())
-            else:
-                vectors.append(np.asarray(tensor))
+            vectors.append(np.asarray(tensor))
                 
     if not vectors:
         raise ValueError(f"No embeddings found for key '{key}'")
@@ -207,16 +184,13 @@ def stack_embeddings_with_joint(records: Sequence[dict], key: str) -> np.ndarray
 
 
 def save_umap_coordinates(coords_map: dict[str, np.ndarray], save_path: Path) -> None:
-    """Save UMAP coordinates to a file for reuse."""
     save_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(coords_map, save_path)
     print(f"  Saved UMAP coordinates to {save_path}")
 
 
 def load_umap_coordinates(load_path: Path) -> dict[str, np.ndarray]:
-    """Load previously computed UMAP coordinates."""
     coords_map = torch.load(load_path, map_location="cpu", weights_only=False)
-    # Convert tensors to numpy if needed
     for key in coords_map:
         if isinstance(coords_map[key], torch.Tensor):
             coords_map[key] = coords_map[key].numpy()
@@ -225,7 +199,6 @@ def load_umap_coordinates(load_path: Path) -> dict[str, np.ndarray]:
 
 
 def compute_umap(embeddings: np.ndarray, random_state: int, preset: str = "balanced") -> np.ndarray:
-    """Compute UMAP projection for the given embeddings using a preset configuration."""
     config = UMAP_PRESETS[preset]
     reducer = umap.UMAP(
         random_state=random_state,
@@ -240,94 +213,72 @@ def compute_umap(embeddings: np.ndarray, random_state: int, preset: str = "balan
 def merge_embedding_records(
     aion_records: list[dict],
     astropt_records: list[dict],
+    astroclip_records: list[dict],
     catalog: dict,
     physical_param: str,
 ) -> tuple[list[dict], np.ndarray, list[str]]:
     """
-    Merge AION and AstroPT embeddings, match with catalog, and extract physical parameter.
-    
-    Returns:
-        - merged_records: List of merged records with all embedding types
-        - physical_values: Array of physical parameter values (NaN for missing)
-        - valid_object_ids: List of object IDs that have at least one embedding
+    Merge AION, AstroPT, and AstroCLIP embeddings with PROPER PREFIXING.
     """
-    # Build dictionaries keyed by object_id
-    aion_dict = {str(rec.get("object_id", "")): rec for rec in aion_records}
-    astropt_dict = {str(rec.get("object_id", "")): rec for rec in astropt_records}
+    # Build dictionaries
+    aion_dict = {str(r.get("object_id", "")): r for r in aion_records}
+    astropt_dict = {str(r.get("object_id", "")): r for r in astropt_records}
+    astroclip_dict = {str(r.get("object_id", "")): r for r in astroclip_records}
     
-    # Get all unique object IDs
-    all_ids = set(aion_dict.keys()) | set(astropt_dict.keys())
-    all_ids.discard("")  # Remove empty IDs
+    all_ids = set(aion_dict.keys()) | set(astropt_dict.keys()) | set(astroclip_dict.keys())
+    all_ids.discard("")
     
     merged_records = []
     physical_values = []
-    valid_object_ids = []
-    
-    # Debug: track matching statistics
-    catalog_matches = 0
-    param_found = 0
-    param_valid = 0
+    valid_ids = []
     
     for obj_id in sorted(all_ids):
+        # We start with empty dict, NOT reusing aion_dict content directly to strictly control keys.
+        # But for AION we can keep original keys or prefix them?
+        # AION keys (hsc_desi) are generally unique. 
+        # But let's standardize: "aion_" vs "astropt_" vs "astroclip_"
+        # To maintain compatibility with existing cache consumer `plot_paper_combined_umap.py` lines:
+        # KEY_AION_CACHE = "aion_embedding_hsc_desi"
+        # KEY_ASTROPT_CACHE = "astropt_embedding_joint"
+        # KEY_ASTROCLIP_CACHE = "astroclip_embedding_joint"
+        
         merged_rec = {"object_id": obj_id}
         
-        # Merge AION embeddings
+        # Merge AION
         if obj_id in aion_dict:
-            for key in AION_EMBEDDING_KEYS:
-                if key in aion_dict[obj_id]:
-                    merged_rec[key] = aion_dict[obj_id][key]
+            for k in AION_EMBEDDING_KEYS:
+                if k in aion_dict[obj_id]:
+                    # Standardize prefix "aion_" if strictly following updated plan
+                    # OR check if keys already overlap. 
+                    merged_rec[f"aion_{k}"] = aion_dict[obj_id][k]
         
-        # Merge AstroPT embeddings
+        # Merge AstroPT
         if obj_id in astropt_dict:
-            for key in ASTROPT_EMBEDDING_KEYS:
-                if key in astropt_dict[obj_id]:
-                    merged_rec[key] = astropt_dict[obj_id][key]
-        
-        # Get physical parameter from catalog
+            for k in ASTROPT_EMBEDDING_KEYS:
+                if k in astropt_dict[obj_id]:
+                    merged_rec[f"astropt_{k}"] = astropt_dict[obj_id][k]
+
+        # Merge AstroCLIP 
+        if obj_id in astroclip_dict:
+            for k in ASTROCLIP_EMBEDDING_KEYS:
+                if k in astroclip_dict[obj_id]:
+                    merged_rec[f"astroclip_{k}"] = astroclip_dict[obj_id][k]
+                    
+        # Get physical parameter
         phys_val = np.nan
         if obj_id in catalog:
-            catalog_matches += 1
             try:
                 raw_val = catalog[obj_id][physical_param]
-                param_found += 1
-                
-                # Handle different types (numpy scalar, python float, etc.)
-                if hasattr(raw_val, 'item'):  # numpy scalar
-                    phys_val = float(raw_val.item())
-                else:
-                    phys_val = float(raw_val)
-                
-                # Check if valid (not NaN, not inf)
-                if not (np.isnan(phys_val) or np.isinf(phys_val)):
-                    param_valid += 1
-                else:
-                    phys_val = np.nan
-                    
-            except (KeyError, ValueError, TypeError) as e:
-                # Silently set to NaN - parameter doesn't exist or can't be converted
-                pass
-        
+                if hasattr(raw_val, 'item'): phys_val = float(raw_val.item())
+                else: phys_val = float(raw_val)
+                if np.isnan(phys_val) or np.isinf(phys_val): phys_val = np.nan
+            except: pass
+            
         merged_records.append(merged_rec)
         physical_values.append(phys_val)
-        valid_object_ids.append(obj_id)
-    
-    # Print debug statistics
-    if len(all_ids) > 0:
-        match_rate = catalog_matches / len(all_ids) * 100
-        print(f"    📊 ID matching: {catalog_matches}/{len(all_ids)} ({match_rate:.1f}%) embeddings found in catalog")
-        if catalog_matches > 0:
-            param_rate = param_found / catalog_matches * 100
-            valid_rate = param_valid / catalog_matches * 100
-            print(f"    📈 Parameter '{physical_param}': {param_found}/{catalog_matches} exist ({param_rate:.1f}%), {param_valid} valid ({valid_rate:.1f}%)")
+        valid_ids.append(obj_id)
         
-        # Show sample IDs for debug
-        if catalog_matches == 0:
-            sample_embed_ids = list(all_ids)[:3]
-            sample_cat_ids = list(catalog.keys())[:3]
-            print(f"    ⚠️  Sample embedding IDs: {sample_embed_ids}")
-            print(f"    ⚠️  Sample catalog IDs: {sample_cat_ids}")
-    
-    return merged_records, np.array(physical_values), valid_object_ids
+    return merged_records, np.array(physical_values), valid_ids
 
 
 def plot_umap_grid(
@@ -336,54 +287,47 @@ def plot_umap_grid(
     param_name: str,
     save_path: Path,
 ) -> None:
-    """
-    Create a 2x3 grid of UMAP plots, one for each embedding type.
+    # Sort keys for consistent display
+    # Group by model
+    # Prefer order: AION -> AstroPT -> AstroCLIP and within that: Image -> Spec -> Joint
     
-    Args:
-        coords_map: Dictionary mapping embedding key to UMAP coordinates
-        colors: Array of physical parameter values for coloring
-        param_name: Name of the physical parameter for labeling
-        save_path: Path to save the figure
-    """
-    # Order: AION embeddings first, then AstroPT
-    ordered_keys = AION_EMBEDDING_KEYS + ASTROPT_EMBEDDING_KEYS
-    available_keys = [k for k in ordered_keys if k in coords_map]
+    # helper for sorting
+    def sort_key(k):
+        score = 0
+        if "aion" in k: score += 100
+        elif "astropt" in k: score += 200
+        elif "astroclip" in k: score += 300
+        
+        if "image" in k or "hsc" in k: score += 1
+        elif "spectr" in k: score += 2 # spectrum or spectra
+        elif "joint" in k or "hsc_desi" in k: score += 3
+        return score
+
+    names = sorted(list(coords_map.keys()), key=sort_key)
+    n_plots = len(names)
     
-    if not available_keys:
-        raise ValueError("No UMAP coordinates available to plot")
+    # Flexible Grid
+    cols = 3 
+    rows = math.ceil(n_plots / cols)
     
-    # Create grid layout (2 rows x 3 columns)
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    axes = axes.flatten()
+    fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 5 * rows))
+    if n_plots == 1: axes = [axes]
+    else: axes = axes.flatten()
     
-    # Compute robust color limits using percentiles to exclude outliers
+    # Colors
     valid_mask = ~np.isnan(colors)
+    vmin, vmax = 0, 1
     if valid_mask.any():
         valid_colors = colors[valid_mask]
-        # Use 2nd and 98th percentiles to clip outliers
         vmin = np.percentile(valid_colors, 2)
         vmax = np.percentile(valid_colors, 98)
+        if vmax - vmin < 1e-6: vmin, vmax = valid_colors.min(), valid_colors.max()
+        print(f"    🎨 Color scale: [{vmin:.3f}, {vmax:.3f}]")
+
+    for i, name in enumerate(names):
+        ax = axes[i]
+        coords = coords_map[name]
         
-        # Add some margin if vmin and vmax are too close
-        if vmax - vmin < 1e-6:
-            vmin = valid_colors.min()
-            vmax = valid_colors.max()
-        
-        print(f"    🎨 Color scale for '{param_name}': [{vmin:.3f}, {vmax:.3f}] (clipped at 2-98 percentiles)")
-    else:
-        vmin, vmax = 0, 1
-    
-    for idx, key in enumerate(available_keys):
-        if idx >= len(axes):
-            break
-            
-        ax = axes[idx]
-        coords = coords_map[key]
-        
-        # Separate valid and NaN values
-        valid_mask = ~np.isnan(colors)
-        
-        # Plot points with valid physical parameter values
         if valid_mask.any():
             scatter = ax.scatter(
                 coords[valid_mask, 0],
@@ -393,44 +337,27 @@ def plot_umap_grid(
                 s=10,
                 alpha=0.7,
                 edgecolors="none",
-                vmin=vmin,  # Clip to robust range
-                vmax=vmax,  # Clip to robust range
+                vmin=vmin, vmax=vmax,
             )
             cbar = plt.colorbar(scatter, ax=ax)
-            cbar.set_label(param_name, fontsize=10)
+            cbar.set_label(param_name, fontsize=8)
         
-        # Plot points with NaN values in gray
         if (~valid_mask).any():
-            ax.scatter(
-                coords[~valid_mask, 0],
-                coords[~valid_mask, 1],
-                s=10,
-                color="lightgray",
-                alpha=0.3,
-                edgecolors="none",
-                label=f"{param_name} N/A",
-            )
-            ax.legend(loc="upper right", fontsize=8)
-        
-        # Format title
-        model = "AION" if key in AION_EMBEDDING_KEYS else "AstroPT"
-        pretty_key = key.replace("embedding_", "").replace("_", " ").title()
-        ax.set_title(f"{model}: {pretty_key}", fontsize=12, fontweight="bold")
-        ax.set_xlabel("UMAP-1", fontsize=10)
-        ax.set_ylabel("UMAP-2", fontsize=10)
+            ax.scatter(coords[~valid_mask, 0], coords[~valid_mask, 1], s=10, 
+                       color="lightgray", alpha=0.3, label="N/A")
+            
+        pretty = name.replace("embedding_", "").replace("_", " ").title()
+        ax.set_title(pretty, fontsize=11, fontweight="bold")
+        ax.set_xticks([])
+        ax.set_yticks([])
         ax.grid(True, alpha=0.2)
-    
-    # Hide unused subplots
-    for idx in range(len(available_keys), len(axes)):
-        axes[idx].axis("off")
-    
-    fig.suptitle(
-        f"UMAP Projections of AION & AstroPT Embeddings\nColored by {param_name}",
-        fontsize=16,
-        fontweight="bold",
-    )
-    fig.tight_layout(rect=[0, 0, 1, 0.97])
-    
+        
+    # Hide unused
+    for j in range(i + 1, len(axes)):
+        axes[j].axis("off")
+        
+    fig.suptitle(f"Multi-Model UMAP Projections: {param_name}", fontsize=16, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.97]) # space for tile
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -438,242 +365,60 @@ def plot_umap_grid(
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        description="Visualize UMAP projections of AION and AstroPT embeddings colored by physical parameters",
-    )
-    parser.add_argument(
-        "--aion-embeddings",
-        required=True,
-        help="Path to AION embeddings .pt file",
-    )
-    parser.add_argument(
-        "--astropt-embeddings",
-        required=True,
-        help="Path to AstroPT embeddings .pt file",
-    )
-    parser.add_argument(
-        "--catalog",
-        required=True,
-        help="Path to FITS catalog file",
-    )
-    parser.add_argument(
-        "--output-dir",
-        required=True,
-        help="Directory to save output figures",
-    )
-    parser.add_argument(
-        "--physical-param",
-        default=None,
-        help="Physical parameter from FITS catalog to use for coloring. If not specified with --all-params, uses all available numeric columns.",
-    )
-    parser.add_argument(
-        "--all-params",
-        action="store_true",
-        help="Generate a separate UMAP grid for each numeric physical parameter in the catalog",
-    )
-    parser.add_argument(
-        "--random-state",
-        type=int,
-        default=42,
-        help="Random state for UMAP reproducibility (default: 42)",
-    )
-    parser.add_argument(
-        "--umap-cache",
-        type=str,
-        default=None,
-        help="Path to save/load precomputed UMAP coordinates. If file exists, will load; otherwise will compute and save.",
-    )
-    parser.add_argument(
-        "--umap-preset",
-        type=str,
-        choices=list(UMAP_PRESETS.keys()),
-        default="balanced",
-        help="UMAP preset configuration: balanced (default), local, or global",
-    )
-    parser.add_argument(
-        "--test-all-presets",
-        action="store_true",
-        help="Generate visualizations for all 3 UMAP presets (balanced, local, global) in one run",
-    )
+    parser = argparse.ArgumentParser(description="Multi-Model UMAP Visualization (AION/AstroPT/AstroCLIP)")
+    parser.add_argument("--aion-embeddings", required=True, help="Path to AION embeddings .pt")
+    parser.add_argument("--astropt-embeddings", required=True, help="Path to AstroPT embeddings .pt")
+    parser.add_argument("--astroclip-embeddings", required=True, help="Path to AstroCLIP embeddings .pt")
+    parser.add_argument("--catalog", required=True, help="Path to FITS catalog")
+    parser.add_argument("--output-dir", required=True, help="Output directory")
+    parser.add_argument("--physical-param", help="Physical parameter to color by")
+    parser.add_argument("--all-params", action="store_true", help="Visualize all numeric params")
+    parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--umap-cache", help="Path to cache file")
+    parser.add_argument("--umap-preset", default="balanced", choices=list(UMAP_PRESETS.keys()))
     
     args = parser.parse_args(argv)
     
-    print("=" * 70)
-    print("Multi-Model Embedding UMAP Visualization")
-    print("=" * 70)
+    print("Loading data...")
+    aion_recs = load_embeddings(Path(args.aion_embeddings))
+    astropt_recs = load_embeddings(Path(args.astropt_embeddings))
+    astroclip_recs = load_embeddings(Path(args.astroclip_embeddings))
+    catalog, numeric_cols, _ = load_fits_catalog(Path(args.catalog))
     
-    # Determine which presets to run
-    if args.test_all_presets:
-        presets_to_run = list(UMAP_PRESETS.keys())
-        print(f"\n🔬 Testing ALL {len(presets_to_run)} UMAP presets: {', '.join(presets_to_run)}")
-    else:
-        presets_to_run = [args.umap_preset]
-        print(f"\n📊 Using UMAP preset: {args.umap_preset}")
-        print(f"   {UMAP_PRESETS[args.umap_preset]['description']}")
-    
-    # Load data (once for all presets)
-    print("\n[1/6] Loading AION embeddings...")
-    aion_records = load_embeddings(Path(args.aion_embeddings))
-    print(f"  Loaded {len(aion_records)} AION records")
-    
-    print("\n[2/6] Loading AstroPT embeddings...")
-    astropt_records = load_embeddings(Path(args.astropt_embeddings))
-    print(f"  Loaded {len(astropt_records)} AstroPT records")
-    
-    print("\n[3/6] Loading FITS catalog...")
-    catalog, numeric_columns, id_column = load_fits_catalog(Path(args.catalog))
-    print(f"  Loaded catalog with {len(catalog)} entries")
-    print(f"  Available numeric parameters: {', '.join(numeric_columns[:10])}{'...' if len(numeric_columns) > 10 else ''}")
-    
-    # VALIDATION: Check if embedding object IDs match catalog IDs
-    print("\n[3.5/6] Validating object ID mapping...")
-    # Collect sample object IDs from both models
-    aion_ids = [str(rec.get("object_id", "")) for rec in aion_records[:100]]  # Sample first 100
-    astropt_ids = [str(rec.get("object_id", "")) for rec in astropt_records[:100]]
-    all_sample_ids = set(aion_ids + astropt_ids)
-    all_sample_ids.discard("")  # Remove empty
-    
-    # Check how many match the catalog
-    matched = sum(1 for obj_id in all_sample_ids if obj_id in catalog)
-    match_rate = (matched / len(all_sample_ids) * 100) if all_sample_ids else 0
-    
-    print(f"  Sample ID matching: {matched}/{len(all_sample_ids)} ({match_rate:.1f}%)")
-    
-    if match_rate < 10:
-        print("\n" + "="*70)
-        print("⚠️  WARNING: Very low ID match rate detected!")
-        print("="*70)
-        print(f"  Only {match_rate:.1f}% of embedding IDs were found in the catalog.")
-        print(f"  This suggests a mismatch in object ID formats.")
-        print(f"\n  Sample embedding IDs: {list(all_sample_ids)[:5]}")
-        print(f"  Sample catalog IDs: {list(catalog.keys())[:5]}")
-        print(f"\n  Catalog uses column: '{id_column}'")
-        print("\n  Please verify:")
-        print("    1. Embeddings and catalog are for the same dataset")
-        print("    2. Object ID column is correctly identified")
-        print("    3. ID formats match (e.g., integers vs strings)")
-        print("="*70)
-        
-        if match_rate == 0:
-            raise SystemExit("\n❌ No matching IDs found. Cannot proceed with visualization.")
-        else:
-            user_input = input("\n⚠️  Continue anyway? [y/N]: ")
-            if user_input.lower() != 'y':
-                raise SystemExit("Aborted by user.")
-    else:
-        print(f"  ✅ ID mapping looks good!")
-    
-    # Determine which physical parameters to visualize
-    if args.all_params:
-        params_to_visualize = numeric_columns
-        print(f"\n  Will generate {len(params_to_visualize)} UMAP grids (one per parameter)")
-    elif args.physical_param:
-        params_to_visualize = [args.physical_param]
-        if args.physical_param not in numeric_columns:
-            print(f"\n  Warning: '{args.physical_param}' not found in numeric columns, will try anyway...")
-    else:
-        params_to_visualize = numeric_columns
-        print(f"\n  No --physical-param specified, will generate grids for all {len(params_to_visualize)} numeric parameters")
-    
-    # Process each preset
-    all_generated_files = []
-    for preset_idx, preset_name in enumerate(presets_to_run, 1):
-        if len(presets_to_run) > 1:
-            print("\n" + "=" * 70)
-            print(f"📊 PRESET {preset_idx}/{len(presets_to_run)}: {preset_name.upper()}")
-            print(f"   {UMAP_PRESETS[preset_name]['description']}")
-            print("=" * 70)
-    
-        # Merge records and extract physical parameter
-        # Compute or load UMAPs for all embedding types (only once per preset)
-        print("\n[4/6] Computing/Loading UMAP projections...")
-        all_embedding_keys = AION_EMBEDDING_KEYS + ASTROPT_EMBEDDING_KEYS
-        coords_map = {}
-        
-        # Build cache path with preset name if testing multiple presets
-        cache_path = None
-        if args.umap_cache:
-            if len(presets_to_run) > 1:
-                # Add preset name to cache path
-                cache_base = Path(args.umap_cache)
-                cache_path = cache_base.parent / f"{cache_base.stem}_{preset_name}{cache_base.suffix}"
-            else:
-                cache_path = Path(args.umap_cache)
-        
-        # Check if we can load pre-computed UMAP coordinates
-        if cache_path and cache_path.exists():
-            print(f"  Loading pre-computed UMAP coordinates from cache...")
-            coords_map = load_umap_coordinates(cache_path)
-            print(f"  Loaded {len(coords_map)} UMAP projections")
-            # Still need to merge records for matching object IDs
-            print("  Merging embedding records...")
-            merged_records, _, object_ids = merge_embedding_records(
-                aion_records, astropt_records, catalog, params_to_visualize[0]
-            )
-            print(f"  Merged {len(merged_records)} records")
-        else:
-            # Compute UMAP projections from scratch
-            print(f"  Computing UMAP projections from scratch with preset '{preset_name}'...")
-            # We need merged records for UMAP computation, so use a dummy parameter first
-            print("  Merging embedding records...")
-            merged_records, _, object_ids = merge_embedding_records(
-                aion_records, astropt_records, catalog, params_to_visualize[0]
-            )
-            print(f"  Merged {len(merged_records)} records")
-            
-            for key in all_embedding_keys:
-                try:
-                    embeddings = stack_embeddings_with_joint(merged_records, key)
-                    print(f"  Computing UMAP for '{key}' ({embeddings.shape[0]} samples, {embeddings.shape[1]} dims)...")
-                    coords = compute_umap(embeddings, random_state=args.random_state, preset=preset_name)
-                    coords_map[key] = coords
-                except ValueError as e:
-                    print(f"  Skipping '{key}': {e}")
-            
-            # Save UMAP coordinates if cache path is provided
-            if cache_path:
-                save_umap_coordinates(coords_map, cache_path)
-        
-        if not coords_map:
-            raise SystemExit("No valid embeddings found. Cannot generate visualization.")
-    
-        # Generate visualizations for each parameter
-        print(f"\n[5/6] Extracting physical parameters and generating visualizations...")
-        generated_files = []
-        
-        for param_idx, param_name in enumerate(params_to_visualize, 1):
-            print(f"\n  [{param_idx}/{len(params_to_visualize)}] Processing '{param_name}'...")
-            
-            # Extract physical values for this parameter
-            _, physical_values, _ = merge_embedding_records(
-                aion_records, astropt_records, catalog, param_name
-            )
-            valid_param_count = (~np.isnan(physical_values)).sum()
-            print(f"    Found {valid_param_count}/{len(physical_values)} valid values")
-            
-            # Generate visualization with preset name in filename if testing multiple
-            if len(presets_to_run) > 1:
-                output_path = Path(args.output_dir) / f"umap_grid_{param_name}_{preset_name}.png"
-            else:
-                output_path = Path(args.output_dir) / f"umap_grid_{param_name}.png"
-            plot_umap_grid(coords_map, physical_values, param_name, output_path)
-            generated_files.append(output_path)
-        
-        print("\n[6/6] Summary for this preset")
-        print(f"  Generated {len(generated_files)} UMAP grid visualizations")
-        print(f"  Output directory: {args.output_dir}")
-        all_generated_files.extend(generated_files)
-    
-    print("\n" + "=" * 70)
-    print("✅ Done!")
-    if len(presets_to_run) > 1:
-        print(f"\n📊 Generated visualizations for {len(presets_to_run)} UMAP presets:")
-        for preset in presets_to_run:
-            print(f"   - {preset}: {UMAP_PRESETS[preset]['description']}")
-    print(f"\n📁 Total files generated: {len(all_generated_files)}")
-    print(f"📂 Output directory: {args.output_dir}")
-    print("=" * 70)
+    params_to_viz = numeric_cols if args.all_params else ([args.physical_param] if args.physical_param else [])
+    if not params_to_viz:
+        print("No parameters selected to visualize (use --physical-param or --all-params).")
+        return
 
+    # Compute UMAPs (Merged dummy first)
+    print("Merging records and computing UMAPs...")
+    all_recs, _, _ = merge_embedding_records(aion_recs, astropt_recs, astroclip_recs, catalog, params_to_viz[0])
+    
+    coords_map = {}
+    if args.umap_cache and Path(args.umap_cache).exists():
+         coords_map = load_umap_coordinates(Path(args.umap_cache))
+    else:
+         # Need to find all valid keys in merged records (that are embeddings)
+         sample_keys = [k for k in all_recs[0].keys() if k not in ["object_id", "redshift"]]
+         for key in sample_keys:
+             try:
+                embeddings = stack_embeddings_with_joint(all_recs, key)
+                print(f"  Computing UMAP for {key}...")
+                coords_map[key] = compute_umap(embeddings, args.random_state, args.umap_preset)
+             except ValueError:
+                 print(f"  Skipping {key} (no data)")
+         
+         if args.umap_cache:
+             save_umap_coordinates(coords_map, Path(args.umap_cache))
+             
+    # Plotting
+    for param in params_to_viz:
+        print(f"Plotting {param}...")
+        _, values, _ = merge_embedding_records(aion_recs, astropt_recs, astroclip_recs, catalog, param)
+        save_path = Path(args.output_dir) / f"umap_grid_{param}.png"
+        plot_umap_grid(coords_map, values, param, save_path)
+        
+    print("Done.")
 
 if __name__ == "__main__":
     main()

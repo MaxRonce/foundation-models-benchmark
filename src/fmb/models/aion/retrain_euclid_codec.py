@@ -28,29 +28,16 @@ import safetensors.torch as st
 from huggingface_hub import hf_hub_download
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from fmb.data.load_display_data_hsc import EuclidDESIDataset
-# Paths management
-from fmb.paths import load_paths
-
-# AION might need sys.path for Phase 1 if not in python path
-try:
-    from aion.codecs import ImageCodec
-    from aion.codecs.config import HF_REPO_ID
-    from aion.codecs.preprocessing.image import CenterCrop
-    from aion.modalities import EuclidImage
-except ImportError:
-    import sys
-    from pathlib import Path
-    sys.path.append(str(Path(__file__).resolve().parents[4] / "external" / "AION"))
-    from aion.codecs import ImageCodec
-    from aion.codecs.config import HF_REPO_ID
-    from aion.codecs.preprocessing.image import CenterCrop
-    from aion.modalities import EuclidImage
+from scratch.load_display_data import EuclidDESIDataset
+from aion.codecs import ImageCodec
+from aion.codecs.config import HF_REPO_ID
+from aion.codecs.preprocessing.image import CenterCrop
+from aion.modalities import EuclidImage
 from typing import List, Optional
 
 BANDS = ["EUCLID-VIS", "EUCLID-Y", "EUCLID-J", "EUCLID-H"]
 
-# Zero points in nJy/ADU (derived from user-provided ZP_nu table)
+# Zero points in nJy/ADU 
 # Target is nanomaggies (ZP=22.5 mag, 1 nmgy = 3631 nJy)
 # Scale factor = ZP_nu / 3631.0
 EUCLID_ZP_NU = {
@@ -60,13 +47,21 @@ EUCLID_ZP_NU = {
     "nisp_h_image": 918.35,
 }
 
+def zp_nu_to_mag(zp_nu):
+    return 22.5 - 2.5 * torch.log10(torch.tensor(zp_nu) / 3631.0)
+
+EUCLID_ZP_MAG = {
+    "vis_image": zp_nu_to_mag(2835.34),
+    "nisp_y_image": zp_nu_to_mag(1916.10),
+    "nisp_j_image": zp_nu_to_mag(1370.25),
+    "nisp_h_image": zp_nu_to_mag(918.35),
+}
+
 
 class EuclidImageDataset(torch.utils.data.Dataset):
     """Wrap EuclidDESIDataset to emit EuclidImage objects."""
 
-    def __init__(self, split: str, cache_dir: Optional[str], max_entries: Optional[int], resize: int):
-        if cache_dir is None:
-             cache_dir = str(load_paths().data)
+    def __init__(self, split: str, cache_dir: str, max_entries: Optional[int], resize: int):
         self.base = EuclidDESIDataset(split=split, cache_dir=cache_dir, verbose=False)
         self.max_entries = max_entries if max_entries is not None and max_entries > 0 else None
         self.resize = resize
@@ -93,9 +88,13 @@ class EuclidImageDataset(torch.utils.data.Dataset):
             tensor = torch.nan_to_num(tensor, nan=0.0, posinf=0.0, neginf=0.0)
             
             # Apply zero-point scaling to convert to nanomaggies (Legacy Survey scale)
-            zp_nu = EUCLID_ZP_NU[key]
-            scale_factor = zp_nu / 3631.0
-            tensor = tensor * scale_factor
+            #zp_nu = EUCLID_ZP_NU[key]
+            #scale_factor = zp_nu / 3631.0
+            #tensor = tensor * scale_factor
+
+            zp_mag = EUCLID_ZP_MAG[key]
+            scale_factor = 10.0 ** ((zp_mag - 22.5) / 2.5)
+            tensor = tensor / scale_factor
 
             if tensor.ndim == 3 and tensor.shape[0] == 1:
                 tensor = tensor.squeeze(0)
@@ -131,7 +130,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-entries", type=int, default=5000, help="Limit samples (<=0 means all).")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=5)
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=3e-6)
     parser.add_argument("--resize", type=int, default=160, help="Resize Euclid bands to NxN before cropping.")
     parser.add_argument("--crop-size", type=int, default=96, help="Center-crop size for reconstruction loss.")
     parser.add_argument(
@@ -158,7 +157,7 @@ def parse_args() -> argparse.Namespace:
         default="none",
         help="Optional LR scheduler; cosine anneals over total steps.",
     )
-    parser.add_argument("--output", type=str, default=None, help="Save directory.")
+    parser.add_argument("--output", type=str, default="outputs/retrained_euclid_codec", help="Save directory.")
     parser.add_argument(
         "--save-viz",
         type=str,
@@ -168,7 +167,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-abs",
         type=float,
-        default=1e4,
+        default=100.0,
         help="Clamp absolute flux before range compression to avoid NaNs/infs (set <=0 to disable).",
     )
     return parser.parse_args()
@@ -298,6 +297,11 @@ def main() -> None:
 
                     patch_expanded = patch.repeat(*repeat_factors)
                     new_tensor[tuple(dst_slice)] = patch_expanded
+                    
+                    # Add small noise to break symmetry (User request)
+                    # This prevents the new channels from being exact copies, which can cause correlation issues
+                    noise = 0.01 * torch.randn_like(new_tensor[tuple(dst_slice)])
+                    new_tensor[tuple(dst_slice)] += noise
 
             state[name] = new_tensor
 
@@ -355,7 +359,21 @@ def main() -> None:
             euclid_cropped = EuclidImage(flux=cropped, bands=euclid_img.bands)
 
             optimizer.zero_grad(set_to_none=True)
-            tokens = codec.encode(euclid_cropped)
+            
+            # Split encode to inspect latents
+            # tokens = codec.encode(euclid_cropped)
+            embeddings = codec._encode(euclid_cropped)
+            
+            # Log stats of embeddings before quantization
+            if progress.n % 10 == 0:
+                z_mean = embeddings.mean().item()
+                z_std = embeddings.std().item()
+                z_min = embeddings.min().item()
+                z_max = embeddings.max().item()
+                # Use print inside tqdm to avoid messing up bar
+                progress.write(f"[debug] latent stats (pre-quant): mean={z_mean:.4f} std={z_std:.4f} min={z_min:.4f} max={z_max:.4f}")
+
+            tokens = codec.quantizer.encode(embeddings)
 
             with torch.no_grad():
                 t_min = float(tokens.min())

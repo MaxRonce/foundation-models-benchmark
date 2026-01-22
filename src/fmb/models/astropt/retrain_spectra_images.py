@@ -44,6 +44,7 @@ except ImportError:
 
 # CHANGED: Import from fmb.data instead of scratch
 from fmb.data.load_display_data_hsc import EuclidDESIDataset
+from fmb.paths import load_paths
 
 # CHANGED: Ensure astropt imports work (try/except block from existing file)
 try:
@@ -73,9 +74,12 @@ class EuclidDESIMultimodalDataset(torch.utils.data.Dataset):
         split: str = "train",
         image_size: int = 224,
         spectrum_length: int = 7781,
-        cache_dir: str = "/n03data/ronceray/datasets",
+        cache_dir: Optional[str] = None,
         verbose: bool = False,
     ):
+        if cache_dir is None:
+             cache_dir = str(load_paths().cache)
+             
         normalized_split = split.replace("+", ",") if isinstance(split, str) else split
         self.base = EuclidDESIDataset(split=normalized_split, cache_dir=cache_dir, verbose=verbose)
         self.image_size = image_size
@@ -143,7 +147,7 @@ class TrainingConfig:
     """Configuration for multimodal training."""
     
     # Output and logging
-    out_dir: str = "/n03data/ronceray/models/astropt"
+    out_dir: str = str(load_paths().retrained_weights / "astropt")
     eval_interval: int = 100  # More frequent evaluation for production
     eval_iters: int = 50  # Faster evaluation
     log_interval: int = 20  # More frequent logging
@@ -158,7 +162,7 @@ class TrainingConfig:
     num_workers: int = 0  # Disable multiprocessing to avoid disk space issues
     image_size: int = 224
     spectrum_length: int = 7781
-    cache_dir: str = "/n03data/ronceray/datasets"
+    cache_dir: str = str(load_paths().dataset)
     
     # Model architecture
     block_size: int = 1024  # Increased to handle longer sequences with small patch sizes

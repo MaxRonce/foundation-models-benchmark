@@ -84,7 +84,7 @@ def embed(
     elif model == "astropt":
         from fmb.embeddings.generate_embeddings_astropt import main as run_task
     elif model == "astroclip":
-        from fmb.embeddings.compute_embeddings import main as run_task
+        from fmb.embeddings.generate_embeddings_astroclip import main as run_task
     else:
         typer.echo(f"❌ Unknown model: {model}")
         raise typer.Exit(1)
@@ -94,7 +94,7 @@ def embed(
 @app.command()
 def detect(
     ctx: typer.Context,
-    method: str = typer.Argument(..., help="Detection method (cosine, nfs)"),
+    method: str = typer.Argument(..., help="Detection method (cosine, nfs, iforest)"),
     slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
 ):
     """Stage 03: Detect anomalies using embeddings."""
@@ -109,6 +109,8 @@ def detect(
         from fmb.detection.detect_cosine_anomalies import main as run_task
     elif method == "nfs":
         from fmb.detection.detect_outliers_NFs import main as run_task
+    elif method == "iforest":
+        from fmb.detection.detect_outliers import main as run_task
     else:
         typer.echo(f"❌ Unknown method: {method}")
         raise typer.Exit(1)

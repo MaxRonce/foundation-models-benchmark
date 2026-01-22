@@ -120,34 +120,31 @@ def plot_publication_grid(
     
     rows = int(np.ceil(count / cols))
     
-    # Grid: 2 rows per object (Text/Image row, Spectrum row)
-    #       2 cols per object (Text col, Image col)
-    # Total grid dimensions:
-    total_grid_rows = rows * 2
+    # Grid: 1 row per object (Image | Spectrum)
+    #       2 cols per object
+    total_grid_rows = rows
     total_grid_cols = cols * 2
     
     # Figure size
-    # Width: ~3.5 inches per object column -> ~10.5 inches for 3 cols
-    # Height: ~3.0 inches per object row
-    fig_width = 3.5 * cols
-    fig_height = 3.0 * rows
+    # Width: ~5 inches per object (1.5" img + 3.5" spec) -> ~10 inches for 2 cols
+    # Height: ~1.5 inches per object row
+    fig_width = 5.0 * cols
+    fig_height = 1.3 * rows 
     
     fig = plt.figure(figsize=(fig_width, fig_height))
     
     # GridSpec
-    # We want the spectrum row to be slightly shorter or equal to the image row?
-    # User said "1/2 length of spectrum = id + z ... and right part = image"
-    # This implies the top part (text+image) has the same width as the spectrum.
-    # Height ratios: Top row (Image/Text) vs Bottom row (Spectrum).
-    # Let's try 1:0.8 again, or 1:1.
-    
+    # Alternating widths: [1, 2.5] for [Image, Spectrum]
     gs = fig.add_gridspec(
         total_grid_rows, 
         total_grid_cols, 
-        height_ratios=[1, 0.8] * rows, 
-        width_ratios=[1, 1] * cols,
-        hspace=0.05, 
-        wspace=0.05
+        width_ratios=[1, 2.5] * cols,
+        hspace=0.03, 
+        wspace=0.03,
+        top=0.98,
+        bottom=0.05,
+        left=0.02,
+        right=0.98
     )
 
     for idx, sample in enumerate(samples):
@@ -155,43 +152,13 @@ def plot_publication_grid(
         col = idx % cols
         
         # Grid indices
-        r_start = 2 * row
-        c_start = 2 * col
+        # Row is just 'row'
+        # Cols are 2*col (Image) and 2*col+1 (Spectrum)
+        c_img = 2 * col
+        c_spec = 2 * col + 1
         
-        # 1. Text Info (Top-Left)
-        ax_text = fig.add_subplot(gs[r_start, c_start])
-        ax_text.axis("off")
-        
-        obj_id = str(sample.get("object_id", "N/A"))
-        redshift = sample.get("redshift")
-        
-        # Format text
-        # "Euclid ID: ..."
-        # "z = ..."
-        # Plus space for manual text
-        text_content = f"\\textbf{{Euclid ID}}: {obj_id}\n"
-        if redshift is not None:
-            try:
-                text_content += f"$z={float(redshift):.3f}$"
-            except (TypeError, ValueError):
-                text_content += f"$z={redshift}$"
-        
-        # Place text in the center or top-left of the text box
-        # User said "leaving space for me to put text by hand"
-        # So maybe put the ID/z at the top, and leave the rest empty.
-        ax_text.text(
-            0.1, 0.9, 
-            text_content, 
-            transform=ax_text.transAxes, 
-            fontsize=4.5, 
-            va="top", 
-            ha="left",
-            color="black",
-            bbox=dict(facecolor='0.95', alpha=1.0, edgecolor='0.9', boxstyle='round,pad=0.5')
-        )
-
-        # 2. Image (Top-Right)
-        ax_img = fig.add_subplot(gs[r_start, c_start + 1])
+        # 1. Image (Left)
+        ax_img = fig.add_subplot(gs[row, c_img])
         
         image = prepare_rgb_image(sample)
         if image.ndim == 3 and image.shape[2] == 1:
@@ -200,9 +167,33 @@ def plot_publication_grid(
             ax_img.imshow(image, origin="lower")
         
         ax_img.axis("off")
+        
+        # Overlay Text
+        obj_id = str(sample.get("object_id", "N/A"))
+        redshift = sample.get("redshift")
+        
+        text_content = f"{obj_id}"
+        if redshift is not None:
+            try:
+                text_content += f"\n$z={float(redshift):.3f}$"
+            except (TypeError, ValueError):
+                text_content += f"\n$z={redshift}$"
+                
+        # Top-left of image
+        ax_img.text(
+            0.05, 0.95, 
+            text_content, 
+            transform=ax_img.transAxes, 
+            fontsize=7, 
+            va="top", 
+            ha="left",
+            color="white",
+            fontweight='bold',
+            bbox=dict(facecolor='black', alpha=0.5, edgecolor='none', pad=1.0)
+        )
 
-        # 3. Spectrum (Bottom, spanning both columns)
-        ax_spec = fig.add_subplot(gs[r_start + 1, c_start : c_start + 2])
+        # 2. Spectrum (Right)
+        ax_spec = fig.add_subplot(gs[row, c_spec])
 
         wavelength, flux = extract_spectrum(sample)
         
@@ -211,7 +202,7 @@ def plot_publication_grid(
             wave_sorted = wavelength[sort_idx]
             flux_sorted = flux[sort_idx]
             
-            # Use sigma=3 as in the original script to avoid "deformation" complaints if it was about smoothness
+            # Use sigma=3 as in the original script
             smoothed_flux = scipy.ndimage.gaussian_filter1d(flux_sorted, sigma=3)
             
             redshift = sample.get("redshift")
@@ -228,47 +219,50 @@ def plot_publication_grid(
             else:
                 x_label = r"Wavelength [\AA]"
 
-            ax_spec.plot(rest_wave, smoothed_flux, linewidth=0.5, color="black")
+            ax_spec.plot(rest_wave, smoothed_flux, linewidth=0.6, color="black")
             
             # Emission lines
             if z_val is not None:
-                # Get current ylims to place labels
                 ymin, ymax = ax_spec.get_ylim()
-                # Do NOT auto-scale aggressively, rely on matplotlib defaults or just slight padding
-                # But we do want to make sure emission lines don't go off screen if they are huge?
-                # Usually matplotlib handles data range well.
-                
                 for name, line_rest in REST_LINES.items():
                     if rest_wave.min() <= line_rest <= rest_wave.max():
-                        ax_spec.axvline(line_rest, color="red", linestyle="--", alpha=0.5, linewidth=0.6)
+                        ax_spec.axvline(line_rest, color="red", linestyle=":", alpha=0.6, linewidth=0.8)
+                        # Label inside graph, vertical, small
                         ax_spec.text(
                             line_rest,
-                            ymax * 0.90,
+                            ymax * 0.98, # Near top
                             name,
                             rotation=90,
                             va="top",
                             ha="center",
-                            fontsize=6,
-                            color="red",
-                            bbox=dict(facecolor="white", alpha=0.9, edgecolor="none", pad=1.0)
+                            fontsize=5,
+                            color="#cc0000",
+                            bbox=dict(facecolor="white", alpha=0.7, edgecolor="none", pad=0.5)
                         )
 
             ax_spec.set_xlim(rest_wave.min(), rest_wave.max())
+            ax_spec.spines['top'].set_visible(False)
+            ax_spec.spines['right'].set_visible(False)
             
-            # X-label only for bottom row of OBJECTS (which is row index 'rows-1')
+            # X-label only for bottom row of OBJECTS
             if row == rows - 1:
-                ax_spec.set_xlabel(x_label)
+                ax_spec.set_xlabel(x_label, fontsize=7, labelpad=2)
             else:
                 ax_spec.set_xticklabels([])
             
-            # Y-label only for first column of OBJECTS
-            if col == 0:
-                # Simplified label
-                ax_spec.set_ylabel(r"Flux")
-            else:
-                ax_spec.set_yticklabels([])
-                
+            # Y-label only for first column of OBJECTS (if we care about flux label)
+            # Or just remove it to save space as "arb."
+            if col == 0 and row == rows // 2: # Middle left
+                 # ax_spec.set_ylabel(r"Flux [arb.]", fontsize=7) 
+                 pass # User asked for compact, Flux label often skippable or put on one axis
+            
+            ax_spec.set_yticks([]) # Hide Y ticks mostly for cleanliness or minimal ticks
+            # Maybe keep ticks but no labels?
+            # ax_spec.tick_params(axis='y', left=False, labelleft=False)
+            
             ax_spec.minorticks_on()
+            ax_spec.tick_params(axis='both', which='major', labelsize=6, length=3)
+            ax_spec.tick_params(axis='both', which='minor', length=1.5)
             
         else:
             ax_spec.text(0.5, 0.5, "No spectrum", ha="center", va="center", transform=ax_spec.transAxes)

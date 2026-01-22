@@ -36,9 +36,10 @@ from torch.utils.data import DataLoader, Dataset
 # CHANGED imports
 from fmb.data.astroclip_parquet import ParquetDataSource
 from fmb.models.astroclip.core.astroclip import AstroClipModel, CLIPLoss
-
+from fmb.paths import load_paths
 
 def parse_args() -> argparse.Namespace:
+    paths = load_paths()
     parser = argparse.ArgumentParser(description="Fine-tune AstroCLIP image encoder.")
     parser.add_argument(
         "--parquet-path",
@@ -55,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cache-dir",
         type=str,
-        default="/n03data/ronceray/datasets",
+        default=str(paths.cache),  # Note: user might want dataset_path here if it points to arrow cache
         help="Répertoire du cache HuggingFace (utilisé avec --use-arrow).",
     )
     parser.add_argument(
@@ -75,10 +76,15 @@ def parse_args() -> argparse.Namespace:
         help="Fine-tuner également l'encodeur de spectre (sinon il reste gelé).",
     )
     parser.add_argument("--checkpoint", required=True, help="Checkpoint AstroCLIP Lightning.")
-    parser.add_argument("--output-path", required=True, help="Fichier de sortie du nouvel encodeur d'images (.pt).")
+    
+    # Defaults relative to retrained_weights_path
+    default_out_pt = str(paths.retrained_weights / "astroclip_image_encoder.pt")
+    default_out_ckpt = str(paths.retrained_weights / "astroclip_finetuned.ckpt")
+    
+    parser.add_argument("--output-path", default=default_out_pt, help="Fichier de sortie du nouvel encodeur d'images (.pt).")
     parser.add_argument(
         "--output-ckpt",
-        default=None,
+        default=default_out_ckpt,
         help="Chemin optionnel pour sauvegarder un checkpoint AstroCLIP complet avec l'encodeur fine-tuné.",
     )
     parser.add_argument("--device", default="cuda", help="Device d'entraînement (cuda ou cpu).")

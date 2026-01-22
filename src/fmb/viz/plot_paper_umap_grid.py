@@ -1,8 +1,9 @@
 """
 Script to generate a publication-ready UMAP grid figure.
-Displays two panels:
+Displays three panels:
 1. AstroPT Joint Embeddings (Left)
-2. AION Joint Embeddings (Right)
+2. AION Joint Embeddings (Center)
+3. AstroCLIP Joint Embeddings (Right)
 
 Both with thumbnails overlaid on a grid.
 
@@ -10,6 +11,7 @@ Usage:
     python -m scratch.plot_paper_umap_grid \
         --aion-embeddings /path/to/aion.pt \
         --astropt-embeddings /path/to/astropt.pt \
+        --astroclip-embeddings /path/to/astroclip.pt \
         --index euclid_index.csv \
         --save paper_umap_grid.png \
         --grid-rows 20 --grid-cols 20
@@ -69,6 +71,7 @@ plt.rcParams.update({
 
 KEY_ASTROPT = "embedding_joint"
 KEY_AION = "embedding_hsc_desi"
+KEY_ASTROCLIP = "embedding_joint" # Using prefix logic in main/cache 
 
 def load_embeddings(path: Path) -> list[dict]:
     """Load embedding records from a .pt file."""
@@ -87,7 +90,7 @@ def stack_embeddings(records: Sequence[dict], key: str) -> tuple[np.ndarray, lis
     for rec in records:
         tensor = rec.get(key)
         
-        # Special handling for AstroPT Joint if key is missing but components exist
+        # Special handling for AstroPT/AstroCLIP Joint if key is missing but components exist
         if tensor is None and key == "embedding_joint":
             img_emb = rec.get("embedding_images")
             spec_emb = rec.get("embedding_spectra")
@@ -197,13 +200,10 @@ def add_thumbnails(
             elif image.ndim == 3 and image.shape[2] == 1:
                 image = np.repeat(image, 3, axis=2)
 
-            # Map grid coordinates to axes coordinates
-            # Axes limits are [0, 1] in both dims for simplicity in plotting?
-            # Or we can set limits to [0, grid_cols], [0, grid_rows]
-            
             xmin, xmax = gx, gx + 1
             ymin, ymax = gy, gy + 1
             
+            # Add image
             ax.imshow(
                 image,
                 extent=(xmin, xmax, ymin, ymax),
@@ -212,6 +212,11 @@ def add_thumbnails(
                 aspect="auto",
                 zorder=10,
             )
+            
+            # Add frame
+            rect = plt.Rectangle((xmin, ymin), 1, 1, linewidth=0.5, edgecolor='white', facecolor='none', zorder=11, alpha=0.5)
+            ax.add_patch(rect)
+            
         except Exception as exc:
             print(f"Failed to attach thumbnail for object {sample.get('object_id')}: {exc}")
 
@@ -287,47 +292,13 @@ def plot_panel(
     
     return sc if mask.any() else None
 
-def add_thumbnails(
-    ax: plt.Axes,
-    cell_positions: list[tuple[int, int]],
-    samples: Sequence[dict],
-    grid_rows: int,
-    grid_cols: int,
-) -> None:
-    for (gx, gy), sample in zip(cell_positions, samples):
-        try:
-            image = prepare_rgb_image(sample)
-            image = np.clip(image, 0.0, 1.0)
-            if image.ndim == 2:
-                image = np.repeat(image[..., None], 3, axis=2)
-            elif image.ndim == 3 and image.shape[2] == 1:
-                image = np.repeat(image, 3, axis=2)
-
-            xmin, xmax = gx, gx + 1
-            ymin, ymax = gy, gy + 1
-            
-            # Add image
-            ax.imshow(
-                image,
-                extent=(xmin, xmax, ymin, ymax),
-                origin="lower",
-                interpolation="nearest",
-                aspect="auto",
-                zorder=10,
-            )
-            
-            # Add frame
-            rect = plt.Rectangle((xmin, ymin), 1, 1, linewidth=0.5, edgecolor='white', facecolor='none', zorder=11, alpha=0.5)
-            ax.add_patch(rect)
-            
-        except Exception as exc:
-            print(f"Failed to attach thumbnail for object {sample.get('object_id')}: {exc}")
 
 def get_coords_cached(
     records: list[dict], 
     key: str, 
     random_state: int, 
     cache_path: Optional[Path],
+    cache_key_override: Optional[str] = None,
     use_tsne: bool = False
 ) -> tuple[np.ndarray, list[str], np.ndarray]:
     """
@@ -337,22 +308,21 @@ def get_coords_cached(
     # 1. Stack embeddings first to get IDs and Redshifts (needed for alignment)
     vecs, ids, redshifts = stack_embeddings(records, key)
     
+    # Use override key for cache lookup if provided (e.g. "astroclip_embedding_joint")
+    lookup_key = cache_key_override if cache_key_override else key
+    
     # 2. Check cache
     coords = None
     if cache_path and cache_path.exists():
-        print(f"Loading cached coordinates from {cache_path}...")
+        print(f"Loading cached coordinates from {cache_path} (key: {lookup_key})...")
         try:
             cache_data = torch.load(cache_path, map_location="cpu", weights_only=False)
-            # We need to ensure the cache matches our current data
-            # Simple check: length. Better check: IDs.
-            # For now, let's assume if length matches, it's good (risky but fast)
-            # Or better: The cache should store a dict of {id: coord}
             
-            if isinstance(cache_data, dict) and key in cache_data:
-                cached_coords_map = cache_data[key] # Expecting dict {id: coord} or just array
+            if isinstance(cache_data, dict) and lookup_key in cache_data:
+                cached_coords_map = cache_data[lookup_key] 
                 
                 if isinstance(cached_coords_map, (np.ndarray, torch.Tensor)):
-                    # Array format - assume aligned if length matches
+                    # Array format
                     if len(cached_coords_map) == len(vecs):
                         coords = cached_coords_map
                         if isinstance(coords, torch.Tensor): coords = coords.numpy()
@@ -360,7 +330,6 @@ def get_coords_cached(
                         print(f"Cache length mismatch ({len(cached_coords_map)} vs {len(vecs)}). Recomputing.")
                 elif isinstance(cached_coords_map, dict):
                     # Dict format {id: coord}
-                    # Reconstruct array in order of `ids`
                     temp_coords = []
                     valid_mask = []
                     for i, oid in enumerate(ids):
@@ -375,7 +344,7 @@ def get_coords_cached(
                     else:
                         print(f"Cache missing {len(ids) - sum(valid_mask)} IDs. Recomputing.")
             else:
-                 print(f"Key '{key}' not found in cache. Recomputing.")
+                 print(f"Key '{lookup_key}' not found in cache. Recomputing.")
                  
         except Exception as e:
             print(f"Error loading cache: {e}. Recomputing.")
@@ -387,7 +356,6 @@ def get_coords_cached(
         # Save to cache if path provided
         if cache_path:
             print(f"Saving coordinates to {cache_path}...")
-            # Load existing cache to update it
             full_cache = {}
             if cache_path.exists():
                 try:
@@ -396,10 +364,7 @@ def get_coords_cached(
                 except:
                     pass
             
-            # Save as dict {id: coord} for robustness, or just array?
-            # Let's save as array for this specific script's usage pattern (simpler)
-            # But the user asked for "like the physical param script", which uses a dict of keys -> arrays
-            full_cache[key] = coords
+            full_cache[lookup_key] = coords
             torch.save(full_cache, cache_path)
             
     return coords, ids, redshifts
@@ -408,6 +373,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Generate publication UMAP/t-SNE grid comparison")
     parser.add_argument("--aion-embeddings", required=True, help="AION .pt file")
     parser.add_argument("--astropt-embeddings", required=True, help="AstroPT .pt file")
+    parser.add_argument("--astroclip-embeddings", required=True, help="AstroCLIP .pt file")
     parser.add_argument("--index", required=True, help="Index CSV mapping object_id -> split/index")
     parser.add_argument("--save", default="paper_umap_grid.png", help="Output filename")
     parser.add_argument("--grid-rows", type=int, default=20, help="Grid rows")
@@ -419,19 +385,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     
     args = parser.parse_args(argv)
     
-    # ... (Load Data and Process steps remain same, skipping to Plotting)
-    
     # 1. Load Data
     print("Loading embeddings...")
     aion_recs = load_embeddings(Path(args.aion_embeddings))
     astropt_recs = load_embeddings(Path(args.astropt_embeddings))
+    astroclip_recs = load_embeddings(Path(args.astroclip_embeddings))
     
     cache_path = Path(args.coords_cache) if args.coords_cache else None
     
     # 2. Process AION
     print("Processing AION...")
+    # Use specific cache key "aion_embedding_hsc_desi" if standardized, or rely on file key.
     coords_aion, ids_aion, z_aion = get_coords_cached(
-        aion_recs, KEY_AION, args.random_state, cache_path, args.use_tsne
+        aion_recs, KEY_AION, args.random_state, cache_path, "aion_embedding_hsc_desi", args.use_tsne
     )
     
     thumbs_aion, cells_aion = assign_to_grid(
@@ -441,16 +407,26 @@ def main(argv: Sequence[str] | None = None) -> None:
     # 3. Process AstroPT
     print("Processing AstroPT...")
     coords_astro, ids_astro, z_astro = get_coords_cached(
-        astropt_recs, KEY_ASTROPT, args.random_state, cache_path, args.use_tsne
+        astropt_recs, KEY_ASTROPT, args.random_state, cache_path, "astropt_embedding_joint", args.use_tsne
     )
     
     thumbs_astro, cells_astro = assign_to_grid(
         ids_astro, coords_astro, args.grid_rows, args.grid_cols, args.random_state
     )
     
+    # 3.5 Process AstroCLIP
+    print("Processing AstroCLIP...")
+    coords_clip, ids_clip, z_clip = get_coords_cached(
+        astroclip_recs, KEY_ASTROCLIP, args.random_state, cache_path, "astroclip_embedding_joint", args.use_tsne
+    )
+    
+    thumbs_clip, cells_clip = assign_to_grid(
+        ids_clip, coords_clip, args.grid_rows, args.grid_cols, args.random_state
+    )
+    
     # 4. Fetch Samples (Images)
     print("Fetching image samples...")
-    all_thumb_ids = list(set(thumbs_aion) | set(thumbs_astro))
+    all_thumb_ids = list(set(thumbs_aion) | set(thumbs_astro) | set(thumbs_clip))
     
     index_map = load_index(Path(args.index))
     samples = collect_samples_with_index(
@@ -469,7 +445,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         
     # 5. Plot
     print("Plotting...")
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    fig, axes = plt.subplots(1, 3, figsize=(24, 8))
     
     # AstroPT (Left)
     plot_panel(
@@ -477,10 +453,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         r"\textbf{AstroPT} (Spectra + Images)", args.grid_rows, args.grid_cols
     )
     
-    # AION (Right)
+    # AION (Center)
     plot_panel(
         axes[1], coords_aion, z_aion, thumbs_aion, cells_aion, samples,
         r"\textbf{AION} (Spectra + Images)", args.grid_rows, args.grid_cols
+    )
+    
+    # AstroCLIP (Right)
+    plot_panel(
+        axes[2], coords_clip, z_clip, thumbs_clip, cells_clip, samples,
+        r"\textbf{AstroCLIP} (Spectra + Images)", args.grid_rows, args.grid_cols
     )
     
     # No Colorbar

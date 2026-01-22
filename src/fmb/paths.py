@@ -19,14 +19,29 @@ def _p(v: str | Path) -> Path:
 @dataclass(frozen=True)
 class FMBPaths:
     repo_root: Path
-    data: Path
+    
+    # Specific specialized paths
+    dataset: Path
+    base_weights: Path
+    retrained_weights: Path
+    nfs_weights: Path
+    outliers: Path
+    analysis: Path
+    
+    # Kept for backward compat or generic usage if needed
     embeddings: Path
-    checkpoints: Path
-    runs: Path
     cache: Path
-
+    
+    # Fallback/base roots
+    storage_root: Path
+    runs_root: Path
+    
     def ensure(self) -> "FMBPaths":
-        for p in [self.data, self.embeddings, self.checkpoints, self.runs, self.cache]:
+        # Create directories that are meant to be output directories
+        # dataset and base_weights are input dirs usually, so we might not want to mkdir them blindly?
+        # But if they are just roots, it's safer to ensure they exist or warn.
+        # Let's ensure output dirs.
+        for p in [self.retrained_weights, self.nfs_weights, self.outliers, self.analysis, self.embeddings, self.cache, self.runs_root]:
             p.mkdir(parents=True, exist_ok=True)
         return self
 
@@ -34,19 +49,21 @@ class FMBPaths:
         d = self.embeddings / model
         d.mkdir(parents=True, exist_ok=True)
         return d
-
-    def checkpoints_dir(self, model: str) -> Path:
-        d = self.checkpoints / model
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-
+    
+    # Helper for generic "run" outputs if needed
     def new_run_dir(self, tag: str) -> Path:
         stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        d = self.runs / f"{stamp}_{tag}"
+        d = self.runs_root / f"{stamp}_{tag}"
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+_CACHED_PATHS: Optional[FMBPaths] = None
+
 def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FMBPaths:
+    global _CACHED_PATHS
+    if _CACHED_PATHS is not None and config_path is None:
+        return _CACHED_PATHS
+
     repo_root = _repo_root()
 
     if config_path is None:
@@ -54,35 +71,66 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
         if env_cfg:
             config_path = Path(env_cfg)
 
+    # Check for config.yaml first, then storage.yaml for backward compat
     if config_path is None:
-        config_path = repo_root / "configs" / "storage.yaml"
+        candidates = [repo_root / "configs" / "config.yaml", repo_root / "configs" / "storage.yaml"]
+        for c in candidates:
+            if c.exists():
+                config_path = c
+                break
+    
+    if config_path is None or not config_path.exists():
+         # Fallback default if nothing exists
+         config_path = repo_root / "configs" / "config.yaml"
+    
+    # Load config if valid
+    cfg = {}
+    if config_path.exists():
+        cfg = yaml.safe_load(config_path.read_text()) or {}
 
-    if not config_path.exists():
-        raise FileNotFoundError(
-            f"Paths config not found: {config_path}. "
-            "Create it (e.g. configs/storage.yaml) or set FMB_PATHS_CONFIG."
-        )
-
-    cfg = yaml.safe_load(config_path.read_text())
-
-    storage_root = cfg.get("storage_root")
-    if storage_root:
-        storage_root = _p(storage_root)
+    # 1. Storage Root (Default Base)
+    storage_root_str = cfg.get("storage_root")
+    if storage_root_str:
+        storage_root = _p(storage_root_str)
     else:
         storage_root = repo_root
 
-    data = _p(cfg.get("data_root", storage_root / "data"))
-    emb  = _p(cfg.get("emb_root", storage_root / "embeddings"))
-    ckpt = _p(cfg.get("ckpt_root", storage_root / "checkpoints"))
-    runs = _p(cfg.get("runs_root", storage_root / "runs"))
-    cache = _p(cfg.get("cache_root", storage_root / "cache"))
+    # Helper to resolve path: check absolute, or relative to storage_root
+    def resolve(key: str, default_subpath: str) -> Path:
+        val = cfg.get(key)
+        if val:
+            return _p(val)
+        return storage_root / default_subpath
+
+    # 2. Resolve requested paths
+    dataset_path = resolve("dataset_path", "data")
+    base_weights_path = resolve("base_weights_path", "checkpoints/base")
+    retrained_weights_path = resolve("retrained_weights_path", "checkpoints/retrained")
+    nfs_weights_path = resolve("nfs_weights_path", "checkpoints/nfs")
+    outliers_path = resolve("outliers_path", "outputs/outliers")
+    analysis_path = resolve("analysis_path", "outputs/analysis")
+    
+    # Generic/Legacy
+    emb_path = resolve("emb_root", "embeddings")
+    cache_path = resolve("cache_root", "cache")
+    runs_path = resolve("runs_root", "runs")
 
     paths = FMBPaths(
         repo_root=repo_root,
-        data=data,
-        embeddings=emb,
-        checkpoints=ckpt,
-        runs=runs,
-        cache=cache,
+        storage_root=storage_root,
+        dataset=dataset_path,
+        base_weights=base_weights_path,
+        retrained_weights=retrained_weights_path,
+        nfs_weights=nfs_weights_path,
+        outliers=outliers_path,
+        analysis=analysis_path,
+        embeddings=emb_path,
+        cache=cache_path,
+        runs_root=runs_path,
     )
-    return paths.ensure() if ensure else paths
+
+    if ensure:
+        paths.ensure()
+    
+    _CACHED_PATHS = paths
+    return paths
