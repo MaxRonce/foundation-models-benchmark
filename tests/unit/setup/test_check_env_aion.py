@@ -3,12 +3,12 @@ from unittest.mock import patch, MagicMock
 import sys
 
 from tests.base import FMBTestCase
-from fmb.setup.check_environment import check_hf_auth, check_torch, check_aion
+from fmb.setup.check_environment_aion import check_hf_auth, check_torch, check_aion
 
 class TestCheckEnvironmentUnit(FMBTestCase):
     """Unit tests for environment checks (mocked)."""
 
-    @patch("fmb.setup.check_environment.torch")
+    @patch("fmb.setup.check_environment_aion.torch")
     def test_check_torch(self, mock_torch):
         """Test check_torch prints version and checks cuda."""
         mock_torch.__version__ = "2.0.0"
@@ -22,7 +22,7 @@ class TestCheckEnvironmentUnit(FMBTestCase):
         mock_torch.cuda.is_available.assert_called()
         mock_torch.randn.assert_called()
 
-    @patch("fmb.setup.check_environment.HfApi")
+    @patch("fmb.setup.check_environment_aion.HfApi")
     def test_check_hf_auth_success(self, mock_hf_api_cls):
         """Test successful HF auth check."""
         mock_api = MagicMock()
@@ -49,7 +49,7 @@ class TestCheckEnvironmentUnit(FMBTestCase):
              patch("huggingface_hub.hf_hub_download") as mock_hf_download, \
              patch("builtins.open", unittest.mock.mock_open(read_data='{"test": 1}')):
             
-            from fmb.setup.check_environment import check_aion
+            from fmb.setup.check_environment_aion import check_aion
             
             mock_hf_download.return_value = "dummy_config.json"
             model_name = "test/aion"
