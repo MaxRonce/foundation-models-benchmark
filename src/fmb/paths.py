@@ -22,7 +22,13 @@ class FMBPaths:
     
     # Specific specialized paths
     dataset: Path
+    dataset_train: Path
+    dataset: Path
+    dataset_train: Path
+    dataset_test: Path
+    dataset_hf_id: str
     base_weights: Path
+
     
     # Model specific base weights (can be configured separately)
     base_weights_aion: Path
@@ -108,22 +114,21 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
             return _p(val)
         return storage_root / default_subpath
 
-    # 2. Resolve requested paths
-    dataset_path = resolve("dataset_path", "data")
-    base_weights_path = resolve("base_weights_path", "checkpoints/base")
-    
-    # Resolve model specific weights, defaulting to base_weights/<model_name>
-    base_weights_aion = resolve("base_weights_path_aion", "") 
-    # Use empty default to trigger fallback logic? No, resolve joins with storage_root if relative.
-    # But we want default to be base_weights_path / "aion".
-    # Let's adjust logic.
-    
     def resolve_optional(key: str, default_abs: Path) -> Path:
         val = cfg.get(key)
         if val:
             return _p(val)
         return default_abs
 
+    # 2. Resolve requested paths
+    dataset_path = resolve("dataset_path", "data")
+    dataset_path_train = resolve_optional("dataset_path_train", dataset_path / "train")
+    dataset_path_test = resolve_optional("dataset_path_test", dataset_path / "test")
+    dataset_hf_id = cfg.get("dataset_hf_id", "msiudek/astroPT_euclid_Q1_desi_dr1_dataset")
+
+    base_weights_path = resolve("base_weights_path", "checkpoints/base")
+    
+    # Resolve model specific weights, defaulting to base_weights/<model_name>
     base_weights_aion = resolve_optional("base_weights_path_aion", base_weights_path / "aion")
     base_weights_astropt = resolve_optional("base_weights_path_astropt", base_weights_path / "astropt")
     base_weights_astroclip = resolve_optional("base_weights_path_astroclip", base_weights_path / "astroclip")
@@ -142,6 +147,9 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
         repo_root=repo_root,
         storage_root=storage_root,
         dataset=dataset_path,
+        dataset_train=dataset_path_train,
+        dataset_test=dataset_path_test,
+        dataset_hf_id=dataset_hf_id,
         base_weights=base_weights_path,
         base_weights_aion=base_weights_aion,
         base_weights_astropt=base_weights_astropt,
