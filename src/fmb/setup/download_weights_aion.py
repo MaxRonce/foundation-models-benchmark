@@ -113,27 +113,23 @@ def prime_aion_codecs(
 def main() -> None:
     paths = load_paths()
     
-    parser = argparse.ArgumentParser(description="Download foundation model weights.")
-    parser.add_argument("--model", choices=["aion", "all"], default="all", help="Which model weights to download.")
-    parser.add_argument("--aion-repo", default=DEFAULT_AION_REPO, help="HF repo ID for AION.")
-    parser.add_argument("--aion-revision", default=None, help="Revision for AION.")
+    parser = argparse.ArgumentParser(description="Download AION model weights.")
+    parser.add_argument("--repo", default=DEFAULT_AION_REPO, help="HF repo ID for AION.")
+    parser.add_argument("--revision", default=None, help="Revision for AION.")
     parser.add_argument("--force-codecs", action="store_true", help="Force codec priming even if model download skipped.")
     
     args = parser.parse_args()
 
-    if args.model in ["aion", "all"]:
-        dest = paths.base_weights_aion
-        if not dest.exists() or len(list(dest.glob("*"))) == 0:
-             download_aion_model(args.aion_repo, args.aion_revision, dest)
-             prime_aion_codecs(args.aion_repo, dest)
-        else:
-             print(f"AION directory {dest} already exists and is not empty. Skipping download.")
-             if args.force_codecs:
-                 prime_aion_codecs(args.aion_repo, dest)
-
-    # Future: Add AstroCLIP / AstroPT download logic if they become standard/automated
+    dest = paths.base_weights_aion
+    if not dest.exists() or len(list(dest.glob("*"))) == 0:
+         download_aion_model(args.repo, args.revision, dest)
+         prime_aion_codecs(args.repo, dest)
+    else:
+         print(f"AION directory {dest} already exists and is not empty. Skipping download.")
+         if args.force_codecs:
+             prime_aion_codecs(args.repo, dest)
     
-    print("Weight setup process finished.")
+    print("AION weight setup process finished.")
 
 if __name__ == "__main__":
     main()

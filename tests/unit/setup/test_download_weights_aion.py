@@ -4,12 +4,12 @@ from pathlib import Path
 import sys
 
 from tests.base import FMBTestCase
-from fmb.setup.download_weights import download_aion_model
+from fmb.setup.download_weights_aion import download_aion_model
 
-class TestDownloadWeightsUnit(FMBTestCase):
-    """Unit tests for weight downloading logic (mocked)."""
+class TestDownloadWeightsAIONUnit(FMBTestCase):
+    """Unit tests for AION weight downloading logic (mocked)."""
     
-    @patch("fmb.setup.download_weights.snapshot_download")
+    @patch("fmb.setup.download_weights_aion.snapshot_download")
     def test_download_aion_calls_snapshot_download(self, mock_snapshot_download):
         """Test that download_aion_model calls snapshot_download with correct args."""
         repo_id = "test/repo"
@@ -26,9 +26,9 @@ class TestDownloadWeightsUnit(FMBTestCase):
         )
         self.assertTrue(dest_dir.exists())
 
-    @patch("fmb.setup.download_weights.load_paths")
-    @patch("fmb.setup.download_weights.download_aion_model")
-    @patch("fmb.setup.download_weights.prime_aion_codecs")
+    @patch("fmb.setup.download_weights_aion.load_paths")
+    @patch("fmb.setup.download_weights_aion.download_aion_model")
+    @patch("fmb.setup.download_weights_aion.prime_aion_codecs")
     def test_main_calls_download_when_empty(self, mock_prime, mock_download, mock_load_paths):
         """Test main triggers download if directory is empty."""
         # Setup mock paths
@@ -38,14 +38,13 @@ class TestDownloadWeightsUnit(FMBTestCase):
         mock_paths.base_weights_aion = target_dir
         mock_load_paths.return_value = mock_paths
         
-        from fmb.setup.download_weights import main
+        from fmb.setup.download_weights_aion import main
         
         # Patch argparse
         with patch("argparse.ArgumentParser.parse_args") as mock_parse_args:
             mock_parse_args.return_value = MagicMock(
-                model="aion", 
-                aion_repo="aion/repo", 
-                aion_revision=None, 
+                repo="aion/repo", 
+                revision=None, 
                 force_codecs=False
             )
             main()
@@ -53,9 +52,9 @@ class TestDownloadWeightsUnit(FMBTestCase):
             mock_download.assert_called_once()
             mock_prime.assert_called_once()
 
-    @patch("fmb.setup.download_weights.load_paths")
-    @patch("fmb.setup.download_weights.download_aion_model")
-    @patch("fmb.setup.download_weights.prime_aion_codecs")
+    @patch("fmb.setup.download_weights_aion.load_paths")
+    @patch("fmb.setup.download_weights_aion.download_aion_model")
+    @patch("fmb.setup.download_weights_aion.prime_aion_codecs")
     def test_main_skips_download_when_exists(self, mock_prime, mock_download, mock_load_paths):
         """Test main skips download if directory has content."""
         # Setup mock paths
@@ -65,13 +64,12 @@ class TestDownloadWeightsUnit(FMBTestCase):
         mock_paths.base_weights_aion = target_dir
         mock_load_paths.return_value = mock_paths
         
-        from fmb.setup.download_weights import main
+        from fmb.setup.download_weights_aion import main
         
         with patch("argparse.ArgumentParser.parse_args") as mock_parse_args:
             mock_parse_args.return_value = MagicMock(
-                model="aion", 
-                aion_repo="aion/repo", 
-                aion_revision=None, 
+                repo="aion/repo", 
+                revision=None, 
                 force_codecs=False
             )
             main()
