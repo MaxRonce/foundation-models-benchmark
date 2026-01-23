@@ -25,12 +25,15 @@ python3 --version
 RUN_DIR="outputs/retrained_euclid_codec_${SLURM_JOB_ID}"
 mkdir -p "$RUN_DIR"
 
-python -m scratch.generate_embeddings \
+
+# Assuming adapter is in standard location or provided by user. 
+# PLEASE UPDATE --adapter-checkpoint TO YOUR TRAINED MODEL PATH
+python -m fmb.embeddings.generate_embeddings_aion \
   --split all \
   --batch-size 20 \
   --cache-dir /n03data/ronceray/datasets \
   --model-dir /n03data/ronceray/huggingface/aion \
-  --codec-dir /home/ronceray/AION/outputs/retrained_euclid_codec_428529 \
-  --output /n03data/ronceray/embeddings/aion_embeddings_spec_image_with_retrained_codec_428529.pt
+  --adapter-checkpoint /n03data/ronceray/models/aion/adapters_final.pt \
+  --output /n03data/ronceray/embeddings/aion_embeddings.pt
 
 echo "Finished job $SLURM_JOB_ID at $(date)"

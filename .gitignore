@@ -31,12 +31,12 @@ env.bak/
 venv.bak/
 
 # Project-specific non-versioned directories
-data/
 embeddings/
 checkpoints/
 slurm/logs/
 runs/
 temp/
+data/*
 
 # Configuration (sensitive or local)
 configs/paths_local.py

@@ -1,7 +1,43 @@
-python: python
-entrypoint: scratch/retrain_euclid_codec.py
-args:
-  - --epochs
-  - "10"
-  - --lr
-  - "1e-4"
+# AION Retraining Configuration
+
+# Output directory (will use fmb.paths + 'aion' if not specified)
+# out_dir: null
+
+# Data
+cache_dir: null # Use default from fmb.paths
+split: "all"
+max_entries: 0
+batch_size: 8
+num_workers: 0
+
+# Preprocessing
+resize: 96
+crop_size: 96
+max_abs: 100.0
+cpu_crop: false
+
+# Model (U-Net)
+hidden: 16
+use_unet_checkpointing: false
+resume_adapter: "C:\\Users\\Maxime\\Dev\\Anomalies_dev\\foundation-models-benchmark\\runs\\weights\\models\\aion\\adapters_final.pt" # Path to .pt file. If set, overrides auto_resume.
+auto_resume: true # If true and resume_adapter is null, resumes from latest checkpoint in out_dir.
+
+# Codec
+# Codec is loaded from HF Hub automatically (AION/codecs/image)
+codec_grad: "ste" # "ste" (recommended) or "full"
+disable_codec_checkpointing: false
+
+# Training
+epochs: 3
+learning_rate: 1e-4
+accum_steps: 1
+grad_clip: 1.0
+amp_dtype: "float16" # float16 or bfloat16
+
+# Logging
+log_gpu_mem_every: 50
+log_via_wandb: false
+wandb_project: "aion-retrain"
+
+# System
+device: "cuda"

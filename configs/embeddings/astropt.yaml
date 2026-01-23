@@ -1,7 +1,15 @@
-python: python
-entrypoint: scratch/generate_embeddings_astropt.py
-args:
-  - --batch-size
-  - "128"
-  - --out
-  - "__AUTO__"
+# Config for generate_embeddings_astropt.py
+
+checkpoint: null
+output_dir: null # Defaults to embeddings/astropt
+output_name: C:\Users\Maxime\Dev\Anomalies_dev\foundation-models-benchmark\runs\embeddings\astropt_embeddings.pt
+
+# Data args
+split: "all"
+cache_dir: null
+batch_size: 16
+num_workers: 2
+
+# Model args
+reduction: "mean"
+device: null

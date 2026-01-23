@@ -43,8 +43,10 @@ src_path = Path(__file__).resolve().parents[3]
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
+
 # CHANGED: Import from fmb.data instead of scratch
 from fmb.data.load_display_data import EuclidDESIDataset
+from fmb.data.datasets import AstroPTDataset, FMBDataConfig
 from fmb.paths import load_paths
 
 # Add external/astroPT/src to path for astropt package
@@ -70,81 +72,6 @@ except ImportError:
      # Fallback if running as module differently?
      from .euclid_desi_dataset.multimodal_dataloader import multimodal_collate_fn, prepare_multimodal_batch
 
-
-class EuclidDESIMultimodalDataset(torch.utils.data.Dataset):
-    """Wrapper around EuclidDESIDataset to emit tensors for multimodal training."""
-
-    def __init__(
-        self,
-        split: str = "train",
-        image_size: int = 224,
-        spectrum_length: int = 7781,
-        cache_dir: Optional[str] = None,
-        verbose: bool = False,
-    ):
-        if cache_dir is None:
-             cache_dir = str(load_paths().cache)
-             
-        normalized_split = split.replace("+", ",") if isinstance(split, str) else split
-        self.base = EuclidDESIDataset(split=normalized_split, cache_dir=cache_dir, verbose=verbose)
-        self.image_size = image_size
-        self.spectrum_length = spectrum_length
-
-    def __len__(self):
-        return len(self.base)
-
-    def _prepare_image(self, image: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
-        if image is None:
-            return None
-        img = torch.as_tensor(image, dtype=torch.float32)
-        img = torch.nan_to_num(img, nan=0.0, posinf=0.0, neginf=0.0)
-        if img.ndim == 3 and img.shape[0] not in (1, 3):
-            img = img.permute(2, 0, 1).contiguous()
-        img = img.clamp(0.0, 1.0)
-        if self.image_size and (img.shape[-1] != self.image_size or img.shape[-2] != self.image_size):
-            img = F.interpolate(
-                img.unsqueeze(0),
-                size=(self.image_size, self.image_size),
-                mode="bilinear",
-                align_corners=False,
-            ).squeeze(0)
-        return img
-
-    def _prepare_spectrum(self, spectrum_dict: Optional[dict]) -> Optional[torch.Tensor]:
-        if spectrum_dict is None or spectrum_dict.get("flux") is None:
-            return None
-        flux = torch.as_tensor(spectrum_dict["flux"], dtype=torch.float32)
-        flux = torch.nan_to_num(flux, nan=0.0, posinf=0.0, neginf=0.0)
-
-        if flux.numel() < self.spectrum_length:
-            flux = F.pad(flux, (0, self.spectrum_length - flux.numel()))
-        elif flux.numel() > self.spectrum_length:
-            flux = flux[:self.spectrum_length]
-
-        if flux.std() > 0:
-            flux = flux / (flux.std() + 1e-8)
-        return flux
-
-    def __getitem__(self, idx: int):
-        sample = self.base[idx]
-        image = self._prepare_image(sample.get("rgb_image"))
-        spectrum = self._prepare_spectrum(sample.get("spectrum"))
-
-        targetid = sample.get("targetid")
-        try:
-            targetid_val = int(targetid) if targetid is not None else -1
-        except Exception:
-            targetid_val = -1
-        redshift = sample.get("redshift")
-        redshift_val = float(redshift) if redshift is not None else 0.0
-
-        return {
-            "object_id": sample.get("object_id") or targetid_val,
-            "targetid": targetid_val,
-            "redshift": redshift_val,
-            "image": image,
-            "spectrum": spectrum,
-        }
 
 
 @dataclass
@@ -387,21 +314,22 @@ def create_datasets_and_loaders(config: TrainingConfig, ddp: bool, ddp_rank: int
     """Create datasets and data loaders."""
     
     # Create datasets
-    train_dataset = EuclidDESIMultimodalDataset(
-        split=config.train_split,
-        image_size=config.image_size,
-        spectrum_length=config.spectrum_length,
-        cache_dir=config.cache_dir,
-        verbose=False,
-    )
-    
-    val_dataset = EuclidDESIMultimodalDataset(
-        split=config.val_split,
-        image_size=config.image_size,
-        spectrum_length=config.spectrum_length,
-        cache_dir=config.cache_dir,
-        verbose=False,
-    )
+    def mk_config(split_name):
+        # We handle split logic (removing +) inside FMBDataConfig or Dataset? 
+        # FMBBaseDataset passes split to EuclidDESIDataset which handles +, so just pass it.
+        # But wait, AstroPT implementation replaced + with , manually. 
+        # EuclidDESIDataset supports comma separation.
+        # Let's ensure compatibility.
+        normalized = split_name.replace("+", ",") if isinstance(split_name, str) else split_name
+        return FMBDataConfig(
+            split=normalized,
+            image_size=config.image_size,
+            spectrum_length=config.spectrum_length,
+            cache_dir=config.cache_dir
+        )
+
+    train_dataset = AstroPTDataset(mk_config(config.train_split))
+    val_dataset = AstroPTDataset(mk_config(config.val_split))
     
     # Create samplers for DDP
     train_sampler = None

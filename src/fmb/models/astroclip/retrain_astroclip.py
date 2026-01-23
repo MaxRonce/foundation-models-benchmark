@@ -156,6 +156,7 @@ def parse_args() -> TrainingConfig:
         
     return config
 
+
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -163,79 +164,7 @@ def set_seed(seed: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-def _normalise_spectrum(tensor: torch.Tensor, mode: str) -> torch.Tensor:
-    if mode == "none": return tensor
-    if mode == "zscore":
-        std = tensor.std(unbiased=False).clamp(min=1e-6)
-        return (tensor - tensor.mean()) / std
-    if mode == "minmax":
-        scale = (tensor.max() - tensor.min()).clamp(min=1e-6)
-        return (tensor - tensor.min()) / scale
-    return tensor
-
-class EuclidDESIAstroClipDataset(Dataset):
-    def __init__(self, split, config: TrainingConfig):
-        self.base = EuclidDESIDataset(
-            split=split, 
-            cache_dir=config.cache_dir,
-            verbose=False
-        )
-        self.config = config
-        
-    def __len__(self):
-        return len(self.base)
-        
-    def _pad_or_trim(self, array: np.ndarray) -> torch.Tensor:
-        tensor = torch.as_tensor(array, dtype=torch.float32)
-        target_len = self.config.slice_length
-        if tensor.numel() < target_len:
-            pad_len = target_len - tensor.numel()
-            tensor = torch.cat([tensor, torch.zeros(pad_len, dtype=torch.float32)])
-        else:
-            tensor = tensor[:target_len]
-        return tensor
-
-    def __getitem__(self, idx):
-        sample = self.base[idx]
-        
-        # Image Preprocessing
-        img = torch.as_tensor(sample["rgb_image"], dtype=torch.float32)
-        img = torch.nan_to_num(img, 0.0)
-        if img.ndim == 3 and img.shape[0] not in (1, 3):
-            img = img.permute(2, 0, 1).contiguous()
-        img = img.clamp(0.0, 1.0)
-        
-        # Resize if needed
-        if self.config.image_size and (img.shape[-1] != self.config.image_size or img.shape[-2] != self.config.image_size):
-            img = F.interpolate(
-                img.unsqueeze(0), 
-                size=(self.config.image_size, self.config.image_size),
-                mode="bilinear", 
-                align_corners=False
-            ).squeeze(0)
-            
-        # Spectrum Preprocessing
-        spec_dict = sample["spectrum"]
-        flux = np.asarray(spec_dict["flux"])
-        # Handle wavelength if needed
-        wavelength = np.asarray(spec_dict.get("wavelength", []))
-        if len(wavelength) == 0:
-             wavelength = np.linspace(0, 1, len(flux), dtype=np.float32)
-
-        flux_tensor = self._pad_or_trim(flux)
-        flux_tensor = _normalise_spectrum(flux_tensor, self.config.spectrum_norm)
-        
-        if self.config.include_wavelength:
-            wave_tensor = self._pad_or_trim(wavelength)
-            spectrum = torch.stack([flux_tensor, wave_tensor], dim=-1)
-        else:
-            spectrum = flux_tensor.unsqueeze(-1)
-            
-        return {
-            "image": img,
-            "spectrum": spectrum
-        }
-
+from fmb.data.datasets import AstroClipDataset, FMBDataConfig
 
 def _cosine_scheduler(total_steps: int, warmup_steps: int) -> List[float]:
     schedule = []
@@ -351,10 +280,22 @@ def main():
     
     # Datasets
     print("Loading datasets...")
-    train_dataset = EuclidDESIAstroClipDataset(config.train_split, config)
+    # Adapt TrainingConfig to FMBDataConfig
+    def mk_config(split_name):
+        return FMBDataConfig(
+            split=split_name,
+            cache_dir=config.cache_dir,
+            image_size=config.image_size,
+            max_entries=config.max_samples,
+            spectrum_length=config.slice_length,
+            spectrum_norm=config.spectrum_norm,
+            include_wavelength=config.include_wavelength
+        )
+
+    train_dataset = AstroClipDataset(mk_config(config.train_split))
     val_dataset = None
     if config.val_split:
-        val_dataset = EuclidDESIAstroClipDataset(config.val_split, config)
+        val_dataset = AstroClipDataset(mk_config(config.val_split))
         
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers) if val_dataset else None
@@ -369,8 +310,6 @@ def main():
     patience_curr = 0
     global_step = 0
     
-    # We remove tqdm to match the print style requested or use it carefully. 
-    # original script uses simple prints. Let's switch to simple prints loop to match EXACTLY.
     print(f"Starting training for {config.max_epochs} epochs...")
     
     for epoch in range(1, config.max_epochs + 1):
@@ -446,7 +385,14 @@ def main():
                 best_val_loss = val_loss
                 patience_curr = 0
                 # Save best
-                torch.save(image_encoder.state_dict(), os.path.join(config.out_dir, config.output_filename))
+                torch.save(
+                    {
+                        "state_dict": model.state_dict(),
+                        "config": config.__dict__,
+                        "epoch": epoch
+                    }, 
+                    os.path.join(config.out_dir, config.output_filename)
+                )
                 print(f"[Epoch {epoch}] New best model saved to {os.path.join(config.out_dir, config.output_filename)}")
             else:
                 patience_curr += 1
@@ -455,7 +401,14 @@ def main():
                     break
         else:
              # Just save every epoch if no validation
-             torch.save(image_encoder.state_dict(), os.path.join(config.out_dir, config.output_filename))
+             torch.save(
+                {
+                    "state_dict": model.state_dict(),
+                    "config": config.__dict__,
+                    "epoch": epoch
+                },
+                os.path.join(config.out_dir, config.output_filename)
+             )
              
              
     # Detailed Summary Logging
