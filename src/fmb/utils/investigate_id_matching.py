@@ -22,7 +22,7 @@ else:
     ASTROPT_EMB = "/n03data/ronceray/embeddings/astropt_embeddings.pt"
     CATALOG = "/home/ronceray/AION/DESI_DR1_Euclid_Q1_dataset_catalog_EM.fits"
 
-print(f"\n📂 Fichiers:")
+print(f"\nFichiers:")
 print(f"   AION: {AION_EMB}")
 print(f"   AstroPT: {ASTROPT_EMB}")
 print(f"   Catalogue: {CATALOG}")
@@ -127,7 +127,7 @@ with fits.open(CATALOG) as hdul:
         print(f"      Correspondances: {len(matches)}/{len(embed_ids)} ({match_rate:.1f}%)")
         
         if len(matches) > 0:
-            print(f"      ✅ CORRESPONDANCE TROUVÉE !")
+            print(f"       CORRESPONDANCE TROUVÉE !")
             print(f"      Exemples d'IDs matchés: {list(matches)[:5]}")
         else:
             # Montrer des exemples pour comparaison
@@ -144,7 +144,7 @@ with fits.open(CATALOG) as hdul:
                 catalog_ids_int = {str(int(float(row[col]))) for row in data[:1000]}
                 matches_int = embed_ids & catalog_ids_int
                 if len(matches_int) > 0:
-                    print(f"         ✅ Avec conversion int: {len(matches_int)} matches!")
+                    print(f"          Avec conversion int: {len(matches_int)} matches!")
             except:
                 pass
             
@@ -154,8 +154,8 @@ with fits.open(CATALOG) as hdul:
                     test_ids = {prefix + str(row[col]) + suffix for row in data[:1000]}
                     matches_test = embed_ids & test_ids
                     if len(matches_test) > 0:
-                        print(f"         ✅ Avec prefix='{prefix}', suffix='{suffix}': {len(matches_test)} matches!")
+                        print(f"          Avec prefix='{prefix}', suffix='{suffix}': {len(matches_test)} matches!")
 
 print("\n" + "=" * 80)
-print("✅ Investigation terminée")
+print(" Investigation terminée")
 print("=" * 80)

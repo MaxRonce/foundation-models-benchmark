@@ -63,7 +63,7 @@ def run_test(filename, threshold_percent, expected_anomalies):
     # Check if misaligned are in the top
     content = "".join(lines)
     if "misaligned_0" in content:
-        print("✅ Correctly identified misaligned objects")
+        print(" Correctly identified misaligned objects")
     else:
         print("❌ Failed to identify misaligned objects")
         return False
@@ -86,7 +86,7 @@ def main():
         if os.path.exists(f):
             os.remove(f)
             
-    print("\n✅ All tests passed!")
+    print("\n All tests passed!")
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,11 @@
+
+
+
 # Euclid-DESI Multimodal Dataset Scripts
 
 This directory contains all scripts related to multimodal training on Euclid images + DESI spectra.
+
+> **Note:** The work in this directory was developed by **Malgorzata Siudek**.
 
 ## Directory Structure
 

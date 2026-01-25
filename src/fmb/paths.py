@@ -83,17 +83,22 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
         if env_cfg:
             config_path = Path(env_cfg)
 
-    # Check for config.yaml first, then storage.yaml for backward compat
+    # New config location: src/fmb/configs/
     if config_path is None:
-        candidates = [repo_root / "configs" / "config.yaml", repo_root / "configs" / "storage.yaml"]
+        configs_dir = repo_root / "src" / "fmb" / "configs"
+        # Try paths_local.yaml first (user-specific), then paths.template.yaml (default)
+        candidates = [
+            configs_dir / "paths_local.yaml",
+            configs_dir / "paths.template.yaml",
+        ]
         for c in candidates:
             if c.exists():
                 config_path = c
                 break
     
     if config_path is None or not config_path.exists():
-         # Fallback default if nothing exists
-         config_path = repo_root / "configs" / "config.yaml"
+         # Fallback to template
+         config_path = repo_root / "src" / "fmb" / "configs" / "paths.template.yaml"
     
     # Load config if valid
     cfg = {}

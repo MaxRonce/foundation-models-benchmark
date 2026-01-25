@@ -60,7 +60,7 @@ def detect_keys(record: Dict) -> Tuple[str, str]:
     
     for img_key, spec_key in KNOWN_KEY_PAIRS:
         if img_key in keys and spec_key in keys:
-            print(f"✅ Predicted keys: Image='{img_key}', Spectrum='{spec_key}'")
+            print(f" Predicted keys: Image='{img_key}', Spectrum='{spec_key}'")
             return img_key, spec_key
             
     # If no known pair found, try to find keys containing 'image'/'hsc' and 'spectr'
@@ -68,7 +68,7 @@ def detect_keys(record: Dict) -> Tuple[str, str]:
     spec_candidates = [k for k in keys if 'spectr' in k.lower()]
     
     if len(img_candidates) == 1 and len(spec_candidates) == 1:
-        print(f"⚠️  Guessed keys: Image='{img_candidates[0]}', Spectrum='{spec_candidates[0]}'")
+        print(f"  Guessed keys: Image='{img_candidates[0]}', Spectrum='{spec_candidates[0]}'")
         return img_candidates[0], spec_candidates[0]
         
     raise ValueError(
@@ -140,7 +140,7 @@ def process_embeddings(
         similarities.append(sim)
         
     if skipped > 0:
-        print(f"⚠️  Skipped {skipped} records due to missing or invalid data/keys.")
+        print(f"  Skipped {skipped} records due to missing or invalid data/keys.")
         
     return object_ids, np.array(similarities)
 
@@ -215,7 +215,7 @@ def main():
         n_anomalies = max(1, n_anomalies) # Ensure at least 1
         
     if n_anomalies > n_total:
-        print(f"⚠️  Requested {n_anomalies} anomalies but only {n_total} objects exist. returning all.")
+        print(f"  Requested {n_anomalies} anomalies but only {n_total} objects exist. returning all.")
         n_anomalies = n_total
         
     # Sort by similarity (ascending - lowest similarity first)
@@ -241,7 +241,7 @@ def main():
     
     # 6. Save
     save_anomalies(args.output, anomalies, n_total)
-    print("\n✅ Done!")
+    print("\n Done!")
 
 if __name__ == "__main__":
     main()

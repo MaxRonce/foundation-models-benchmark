@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=fmb_embed_aion
+#SBATCH --job-name=embed_aion
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
@@ -7,23 +7,21 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --output=slurm/logs/embed_aion_%j.out
-#SBATCH --error=slurm/logs/embed_aion_%j.err
 
 set -euo pipefail
 
-export PYTHONPATH=$PYTHONPATH:$PWD/src
+echo "Starting embeddings extraction for AION at $(date)"
 
 module purge
 module load gcc/13.4.0
 module load cuda/12.8
 module load intelpython/3-2025.1.0
 
-# source .venv/bin/activate
+cd "$HOME/foundation-models-benchmark"
+source .venv/bin/activate
+python3 --version
 
-# Utilise fmb.cli embed aion (anciennement python -m fmb.embeddings.generate_embeddings)
-# Les chemins par défaut sont gérés par configs/paths_local.py si non fournis.
+# Generate embeddings via CLI
+python -m fmb.cli embed aion --split all
 
-python -m fmb.cli embed aion \
-  --split all \
-  --batch-size 20 \
-  --output "$(python -m fmb.cli paths --embeddings)/aion/embeddings_all.pt"
+echo "Finished at $(date)"

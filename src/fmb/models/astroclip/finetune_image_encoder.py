@@ -40,7 +40,24 @@ from fmb.paths import load_paths
 
 def parse_args() -> argparse.Namespace:
     paths = load_paths()
+    
+    # Config file support
+    # We parse config first to set defaults
+    early_parser = argparse.ArgumentParser(add_help=False)
+    early_parser.add_argument("--config", help="Chemin vers un fichier de config YAML.")
+    early_args, _ = early_parser.parse_known_args()
+    
+    defaults = {}
+    if early_args.config:
+        import yaml
+        with open(early_args.config, "r") as f:
+            yaml_config = yaml.safe_load(f) or {}
+            defaults.update(yaml_config)
+
     parser = argparse.ArgumentParser(description="Fine-tune AstroCLIP image encoder.")
+    parser.add_argument("--config", help="Chemin vers un fichier de config YAML.")
+    parser.set_defaults(**defaults)
+
     parser.add_argument(
         "--parquet-path",
         dest="parquet_paths",
@@ -75,7 +92,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Fine-tuner également l'encodeur de spectre (sinon il reste gelé).",
     )
-    parser.add_argument("--checkpoint", required=True, help="Checkpoint AstroCLIP Lightning.")
+    
+    # Checkpoint is required unless provided in config
+    if "checkpoint" in defaults:
+        parser.add_argument("--checkpoint", required=False, help="Checkpoint AstroCLIP Lightning.")
+    else:
+        parser.add_argument("--checkpoint", required=True, help="Checkpoint AstroCLIP Lightning.")
     
     # Defaults relative to retrained_weights_path
     default_out_pt = str(paths.retrained_weights / "astroclip_image_encoder.pt")

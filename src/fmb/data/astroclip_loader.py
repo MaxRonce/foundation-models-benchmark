@@ -66,7 +66,7 @@ def load_local_arrow_dataset(
             f"Expected directory structure: {cache_dir}/{local_split_name}/"
         )
     
-    print(f"📂 Loading dataset from {local_path}")
+    print(f"Loading dataset from {local_path}")
     
     # Load using HuggingFace's load_from_disk
     dataset: Dataset = load_from_disk(str(local_path))

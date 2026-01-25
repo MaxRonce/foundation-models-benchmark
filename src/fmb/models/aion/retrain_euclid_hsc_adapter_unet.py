@@ -255,40 +255,81 @@ def load_frozen_codec(device: torch.device) -> Tuple[ImageCodec, dict]:
     return codec, codec_cfg
 
 
+    # Config file
+    p.add_argument("--config", type=str, default=None, help="Path to YAML config file")
+
+    args = p.parse_args()
+    
+    # Load YAML if provided
+    if args.config:
+        import yaml
+        with open(args.config, 'r') as f:
+            yaml_config = yaml.safe_load(f)
+            if yaml_config:
+                # Update args with values from YAML if not specified on CLI (CLI takes precedence? 
+                # Usually config file provides defaults, and CLI overrides. 
+                # But argparse already populated defaults. 
+                # So we should overwrite if YAML value exists AND CLI arg was default? 
+                # Simpler approach: Load YAML, then parse args again with defaults from YAML.
+                # OR: Manually update args namespace where YAML has values.
+                
+                # Let's override defaults with YAML, then let specific CLI args override that.
+                # However, since we already parsed args, we ignore the fact that they might be defaults.
+                # Ideally: set defaults=yaml_values in ArgumentParser.
+                pass 
+                
+    return args
+
+# Better approach: parse args, check for config, reload args with defaults from config
+# Or standard pattern: config args -> parser.set_defaults(**config_args) -> parser.parse_args()
+
 def parse_args() -> argparse.Namespace:
+    # First pass to get config file
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--config", type=str, default=None)
+    early_args, _ = p.parse_known_args()
+
+    # Load defaults from YAML
+    defaults = {}
+    if early_args.config:
+        import yaml
+        with open(early_args.config, 'r') as f:
+            defaults = yaml.safe_load(f) or {}
+
     p = argparse.ArgumentParser()
 
-    p.add_argument("--cache-dir", type=str, default="/scratch")
-    p.add_argument("--split", type=str, default="train")
-    p.add_argument("--max-entries", type=int, default=0)
+    p.add_argument("--config", type=str, default=None, help="Path to YAML config file")
+    p.add_argument("--cache-dir", type=str, default=defaults.get("cache_dir", "/scratch"))
+    p.add_argument("--split", type=str, default=defaults.get("split", "train"))
+    p.add_argument("--max-entries", type=int, default=defaults.get("max_entries", 0))
 
-    p.add_argument("--batch-size", type=int, default=8)
-    p.add_argument("--epochs", type=int, default=5)
-    p.add_argument("--lr", type=float, default=1e-4)
+    p.add_argument("--batch-size", type=int, default=defaults.get("batch_size", 8))
+    p.add_argument("--epochs", type=int, default=defaults.get("epochs", 5))
+    p.add_argument("--lr", type=float, default=float(defaults.get("learning_rate", 1e-4)))
 
-    p.add_argument("--resize", type=int, default=96)
-    p.add_argument("--crop-size", type=int, default=96)
-    p.add_argument("--num-workers", type=int, default=0)
-    p.add_argument("--max-abs", type=float, default=100.0)
+    p.add_argument("--resize", type=int, default=defaults.get("resize", 96))
+    p.add_argument("--crop-size", type=int, default=defaults.get("crop_size", 96))
+    p.add_argument("--num-workers", type=int, default=defaults.get("num_workers", 0))
+    p.add_argument("--max-abs", type=float, default=defaults.get("max_abs", 100.0))
 
-    p.add_argument("--hidden", type=int, default=16)
-    p.add_argument("--output", type=str, default="outputs/euclid_hsc_adapter_unet")
+    p.add_argument("--hidden", type=int, default=defaults.get("hidden", 16))
+    p.add_argument("--output", type=str, default=defaults.get("out_dir", "outputs/euclid_hsc_adapter_unet"))
 
-    p.add_argument("--resume-adapter", type=str, default=None)
-    p.add_argument("--auto-resume", action="store_true")
-    p.add_argument("--grad-clip", type=float, default=1.0)
+    p.add_argument("--resume-adapter", type=str, default=defaults.get("resume_adapter", None))
+    p.add_argument("--auto-resume", action="store_true", default=defaults.get("auto_resume", False))
+    p.add_argument("--grad-clip", type=float, default=defaults.get("grad_clip", 1.0))
 
     # Memory
-    p.add_argument("--accum-steps", type=int, default=1)
-    p.add_argument("--amp-dtype", type=str, default="float16", choices=["float16", "bfloat16"])
-    p.add_argument("--use-unet-checkpointing", action="store_true")
+    p.add_argument("--accum-steps", type=int, default=defaults.get("accum_steps", 1))
+    p.add_argument("--amp-dtype", type=str, default=defaults.get("amp_dtype", "float16"), choices=["float16", "bfloat16"])
+    p.add_argument("--use-unet-checkpointing", action="store_true", default=defaults.get("use_unet_checkpointing", False))
 
-    # Codec gradients: "ste" prevents codec graph retention; "full" backprops through codec (may leak)
-    p.add_argument("--codec-grad", type=str, default="ste", choices=["ste", "full"])
-    p.add_argument("--disable-codec-checkpointing", action="store_true")  # only relevant for --codec-grad full
+    # Codec gradients. YAML uses 'codec_grad'
+    p.add_argument("--codec-grad", type=str, default=defaults.get("codec_grad", "ste"), choices=["ste", "full"])
+    p.add_argument("--disable-codec-checkpointing", action="store_true", default=defaults.get("disable_codec_checkpointing", False))
 
-    p.add_argument("--cpu-crop", action="store_true")
-    p.add_argument("--log-gpu-mem-every", type=int, default=50)
+    p.add_argument("--cpu-crop", action="store_true", default=defaults.get("cpu_crop", False))
+    p.add_argument("--log-gpu-mem-every", type=int, default=defaults.get("log_gpu_mem_every", 50))
 
     return p.parse_args()
 

@@ -1,0 +1,28 @@
+# FMB Paths Configuration Template
+# Copy this file to paths_local.yaml and customize for your system
+
+# Dataset paths
+dataset_path: ~/fmb_data/datasets
+dataset_path_test: ~/fmb_data/datasets/test
+dataset_path_train: ~/fmb_data/datasets/train
+dataset_hf_id: msiudek/astroPT_euclid_Q1_desi_dr1_dataset
+
+# Base weights (pretrained foundation models)
+base_weights_path: ~/fmb_data/weights/base
+base_weights_path_aion: ~/fmb_data/weights/base/aion
+base_weights_path_astropt: ~/fmb_data/weights/base/astropt
+base_weights_path_astroclip: ~/fmb_data/weights/base/astroclip
+
+# Retrained weights (outputs from retraining)
+retrained_weights_path: ~/fmb_data/weights/retrained
+
+# Normalizing Flows weights
+nfs_weights_path: ~/fmb_data/weights/nfs
+
+# Output paths
+embeddings_path: ~/fmb_data/outputs/embeddings
+outliers_path: ~/fmb_data/outputs/outliers
+analysis_path: ~/fmb_data/outputs/analysis
+
+# Cache directory
+cache_path: ~/.cache/huggingface

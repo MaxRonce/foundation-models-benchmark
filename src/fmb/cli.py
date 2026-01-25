@@ -22,12 +22,12 @@ def run_slurm(sbatch_file: str, name: str, extra_args: List[str]):
     cmd = ["sbatch", f"slurm/{sbatch_file}"]
     if extra_args:
         # Some users might want to pass args to sbatch, but here we keep it simple.
-        typer.echo(f"⚠️  Note: Extra arguments {extra_args} are NOT forwarded to sbatch automatically.")
+        typer.echo(f"  Note: Extra arguments {extra_args} are NOT forwarded to sbatch automatically.")
     
-    typer.echo(f"🚀 Submitting Slurm job for {name}...")
+    typer.echo(f" Submitting Slurm job for {name}...")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        typer.echo(f"✅ Job submitted: {result.stdout.strip()}")
+        typer.echo(f" Job submitted: {result.stdout.strip()}")
     except subprocess.CalledProcessError as e:
         typer.echo(f"❌ Error submitting Slurm job: {e.stderr}")
     except FileNotFoundError:
@@ -42,7 +42,7 @@ def forward_args(ctx: typer.Context):
 @app.command()
 def retrain(
     ctx: typer.Context,
-    model: str = typer.Argument(..., help="Model to retrain (aion_codec, astropt, astroclip)"),
+    model: str = typer.Argument(..., help="Model to retrain (aion, astropt, astroclip)"),
     slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
 ):
     """Stage 01: Retrain foundation models or codecs."""
@@ -53,12 +53,13 @@ def retrain(
     typer.echo(f"🛠️ Running retrain for {model} locally...")
     forward_args(ctx)
     
-    if model == "aion_codec":
-        from fmb.models.aion.retrain_euclid_codec import main as run_task
+    # Use new simplified entry points
+    if model == "aion" or model == "aion_codec":
+        from fmb.models.aion.retrain import main as run_task
     elif model == "astropt":
-        from fmb.models.astropt.retrain_spectra_images import main as run_task
+        from fmb.models.astropt.retrain import main as run_task
     elif model == "astroclip":
-        from fmb.models.astroclip.finetune_image_encoder import main as run_task
+        from fmb.models.astroclip.finetune import main as run_task
     else:
         typer.echo(f"❌ Unknown model: {model}")
         raise typer.Exit(1)

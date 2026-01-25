@@ -41,6 +41,7 @@ data/*
 # Configuration (sensitive or local)
 configs/paths_local.py
 configs/storage.yaml
+src/fmb/configs/paths_local.yaml
 .env
 
 # IDEs

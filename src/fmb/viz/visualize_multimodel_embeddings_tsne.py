@@ -364,8 +364,8 @@ def merge_embedding_records(
         if catalog_matches == 0:
             sample_embed_ids = list(all_ids)[:3]
             sample_cat_ids = list(catalog.keys())[:3]
-            print(f"    ⚠️  Sample embedding IDs: {sample_embed_ids}")
-            print(f"    ⚠️  Sample catalog IDs: {sample_cat_ids}")
+            print(f"      Sample embedding IDs: {sample_embed_ids}")
+            print(f"      Sample catalog IDs: {sample_cat_ids}")
     
     return merged_records, np.array(physical_values), valid_object_ids
 
@@ -581,7 +581,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     
     if match_rate < 10:
         print("\n" + "="*70)
-        print("⚠️  WARNING: Very low ID match rate detected!")
+        print("  WARNING: Very low ID match rate detected!")
         print("="*70)
         print(f"  Only {match_rate:.1f}% of embedding IDs were found in the catalog.")
         print(f"  This suggests a mismatch in object ID formats.")
@@ -597,11 +597,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         if match_rate == 0:
             raise SystemExit("\n❌ No matching IDs found. Cannot proceed with visualization.")
         else:
-            user_input = input("\n⚠️  Continue anyway? [y/N]: ")
+            user_input = input("\n  Continue anyway? [y/N]: ")
             if user_input.lower() != 'y':
                 raise SystemExit("Aborted by user.")
     else:
-        print(f"  ✅ ID mapping looks good!")
+        print(f"   ID mapping looks good!")
     
     # Determine which physical parameters to visualize
     if args.all_params:
@@ -701,13 +701,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         all_generated_files.extend(generated_files)
     
     print("\n" + "=" * 70)
-    print("✅ Done!")
+    print(" Done!")
     if len(presets_to_run) > 1:
         print(f"\n📊 Generated visualizations for {len(presets_to_run)} t-SNE presets:")
         for preset in presets_to_run:
             print(f"   - {preset}: {TSNE_PRESETS[preset]['description']}")
-    print(f"\n📁 Total files generated: {len(all_generated_files)}")
-    print(f"📂 Output directory: {args.output_dir}")
+    print(f"\n Total files generated: {len(all_generated_files)}")
+    print(f"Output directory: {args.output_dir}")
     print("=" * 70)
 
 

@@ -99,9 +99,9 @@ def extract_cosine_similarities(records: list[dict]) -> tuple[list[str], list[fl
         similarities.append(float(similarity))
     
     if skipped_missing > 0:
-        print(f"⚠️  Skipped {skipped_missing} records with missing embeddings")
+        print(f"  Skipped {skipped_missing} records with missing embeddings")
     if skipped_invalid > 0:
-        print(f"⚠️  Skipped {skipped_invalid} records with invalid (NaN/Inf) embeddings")
+        print(f"  Skipped {skipped_invalid} records with invalid (NaN/Inf) embeddings")
     
     return object_ids, similarities
 
@@ -276,7 +276,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print_statistics(similarities)
     find_extremes(object_ids, similarities, n_top=args.top_n, n_bottom=args.top_n)
     
-    print("\n✅ Done!")
+    print("\n Done!")
     print("=" * 70)
 
 
