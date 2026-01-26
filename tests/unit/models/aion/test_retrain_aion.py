@@ -16,12 +16,17 @@ if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
     
 # Mock external/AION/aion imports BEFORE importing module under test
-sys.modules["aion"] = MagicMock()
-sys.modules["aion.codecs"] = MagicMock()
-sys.modules["aion.codecs.config"] = MagicMock()
-sys.modules["aion.codecs.preprocessing"] = MagicMock()
-sys.modules["aion.codecs.preprocessing.image"] = MagicMock()
-sys.modules["aion.modalities"] = MagicMock()
+aion_mock = MagicMock()
+aion_mock.__path__ = []
+aion_mock.__spec__ = None
+sys.modules["aion"] = aion_mock
+
+for sub in ["aion.model", "aion.codecs", "aion.codecs.config", 
+            "aion.codecs.preprocessing", "aion.codecs.preprocessing.image", 
+            "aion.modalities"]:
+    m = MagicMock()
+    m.__spec__ = None
+    sys.modules[sub] = m
 
 # Mock specific attributes used
 # We need these to be actual classes or mocks that can be instantiated
@@ -46,32 +51,19 @@ sys.modules["aion.codecs"].ImageCodec = MockCodec
 sys.modules["aion.codecs.config"].HF_REPO_ID = "fake/repo"
 
 # Import the module under test
-# We use a try-except block here in case the import fails due to other side effects
-try:
-    from fmb.models.aion.retrain_euclid_hsc_adapter_unet import (
-        EuclidToHSC, 
-        HSCToEuclid, 
-        load_frozen_codec,
-        EUCLID_BANDS
-    )
-    # No TrainingConfig class exists - it uses argparse directly now
-    TrainingConfig = None
-    
+from fmb.models.aion.model import (
+    EuclidToHSC, 
+    HSCToEuclid, 
+    load_frozen_codec,
+    EuclidImageDataset,
+    EUCLID_BANDS
+)
 
-    # Note: AionDataset now comes from a different location
-    # The new architecture doesn't use the same dataset structure
-    from fmb.data.load_display_data import EuclidDESIDataset
-    AionDataset = None  # This doesn't exist in new architecture
-    FMBDataConfig = None
-except ImportError as e:
-    print(f"Warning: Import failed: {e}")
-    TrainingConfig = None
-    EuclidToHSC = MagicMock()
-    HSCToEuclid = MagicMock()
-    AionDataset = MagicMock()
-    FMBDataConfig = MagicMock()
-    load_frozen_codec = MagicMock()
-    EUCLID_BANDS = ["EUCLID-VIS", "EUCLID-Y", "EUCLID-J", "EUCLID-H"]
+# TrainingConfig no longer exists as a class, it's argparse-based now.
+# But we can still test the defaults if we want to mock argparse or similar.
+TrainingConfig = None
+AionDataset = EuclidImageDataset
+FMBDataConfig = MagicMock() # Still used in one test
 
 class TestRetrainAion(unittest.TestCase):
     
@@ -112,7 +104,7 @@ class TestRetrainAion(unittest.TestCase):
         self.assertEqual(y2.shape, (2, 4, 64, 64))
 
     @unittest.skipIf(AionDataset is None, "AionDataset doesn't exist in new architecture")
-    @patch("fmb.data.datasets.EuclidDESIDataset")
+    @patch("fmb.models.aion.model.EuclidDESIDataset")
     def test_dataset_preprocessing(self, mock_dataset_cls):
         # Mock the underlying dataset
         mock_base = MagicMock()
@@ -129,21 +121,22 @@ class TestRetrainAion(unittest.TestCase):
         mock_base.__getitem__.return_value = sample
         mock_dataset_cls.return_value = mock_base
         
-        config = FMBDataConfig(split="train", image_size=32)
-        dataset = AionDataset(config=config)
+        # New EuclidImageDataset takes split, cache_dir, max_entries, resize
+        dataset = EuclidImageDataset(split="train", cache_dir="fake", max_entries=10, resize=32)
         
         self.assertEqual(len(dataset), 10)
         
-        item =dataset[0]
-        # Check return type is mocked EuclidImage
-        self.assertIsInstance(item, MockEuclidImage)
+        item = dataset[0]
+        # Check return type is EuclidImage (which is a dataclass now)
+        from fmb.models.aion.modalities import EuclidImage
+        self.assertIsInstance(item, EuclidImage)
         # Check shape after resize
         self.assertEqual(item.flux.shape, (4, 32, 32))
         # Check bands
         self.assertEqual(item.bands, EUCLID_BANDS)
 
-    @patch("fmb.models.aion.retrain_euclid_hsc_adapter_unet.hf_hub_download")
-    @patch("fmb.models.aion.retrain_euclid_hsc_adapter_unet.st.load_file")
+    @patch("fmb.models.aion.model.hf_hub_download")
+    @patch("fmb.models.aion.model.st.load_file")
     @patch("builtins.open")
     @patch("json.load")
     def test_training_step_integration(self, mock_json, mock_open, mock_st_load, mock_hf):

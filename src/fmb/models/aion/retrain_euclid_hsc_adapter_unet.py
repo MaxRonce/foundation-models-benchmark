@@ -25,6 +25,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import RandomCrop
 from tqdm.auto import tqdm
+import safetensors.torch as st
 
 from fmb.paths import load_paths
 from fmb.models.aion.modalities import EuclidImage, HSCImage, Image
