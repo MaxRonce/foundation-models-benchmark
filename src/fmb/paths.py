@@ -23,8 +23,6 @@ class FMBPaths:
     # Specific specialized paths
     dataset: Path
     dataset_train: Path
-    dataset: Path
-    dataset_train: Path
     dataset_test: Path
     dataset_hf_id: str
     base_weights: Path

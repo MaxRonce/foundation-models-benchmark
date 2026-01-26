@@ -9,22 +9,26 @@ Complete reference for the Foundation Models Benchmark command-line interface.
 python -m fmb.cli paths
 ```
 
+### Display dataset samples
+```bash
+# View a single sample
+python -m fmb.cli display --split train --index 0 --show-bands --save runs/images/sample.png
+
+# View without GUI (save only)
+python -m fmb.cli display --split all --index 5 --no-gui --save output.png
+```
+
 ---
 
 ## 01. Model Retraining
 
-### AION Codec
+### AION (Euclid ↔ HSC Adapter U-Net)
 ```bash
 # Using config file
-python -m fmb.cli retrain aion_codec --config configs/retrain/aion.yaml
+python -m fmb.cli retrain aion --config configs/retrain/aion.yaml
 
 # Override specific parameters
-python -m fmb.cli retrain aion_codec --epochs 10 --batch-size 16
-```
-
-### AION Adapter (Euclid ↔ HSC)
-```bash
-python -m fmb.cli retrain aion --config configs/retrain/aion.yaml
+python -m fmb.cli retrain aion --epochs 10 --batch-size 16
 ```
 
 ### AstroPT

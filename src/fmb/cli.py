@@ -39,10 +39,11 @@ def forward_args(ctx: typer.Context):
     # We want to give the rest to the script's main().
     sys.argv = [sys.argv[0]] + ctx.args
 
-@app.command()
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def retrain(
     ctx: typer.Context,
     model: str = typer.Argument(..., help="Model to retrain (aion, astropt, astroclip)"),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to YAML config file"),
     slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
 ):
     """Stage 01: Retrain foundation models or codecs."""
@@ -50,12 +51,19 @@ def retrain(
         run_slurm(f"01_retrain/{model}.sbatch", f"retrain {model}", ctx.args)
         return
 
-    typer.echo(f"🛠️ Running retrain for {model} locally...")
-    forward_args(ctx)
+    typer.echo(f"Running retrain for {model} locally...")
+    
+    # Build sys.argv for the underlying script
+    sys.argv = [sys.argv[0]]
+    if config:
+        sys.argv.extend(["--config", config])
+    # Add any extra args from ctx.args
+    sys.argv.extend(ctx.args)
     
     # Use new simplified entry points
     if model == "aion" or model == "aion_codec":
-        from fmb.models.aion.retrain import main as run_task
+        # AION now only has the Euclid<->HSC adapter U-Net training
+        from fmb.models.aion.retrain_euclid_hsc_adapter_unet import main as run_task
     elif model == "astropt":
         from fmb.models.astropt.retrain import main as run_task
     elif model == "astroclip":
@@ -143,6 +151,31 @@ def analyze(
     run_task()
 
 @app.command()
+def display(
+    ctx: typer.Context,
+    split: str = typer.Option("train", "--split", help="Dataset split to load (train, test, all)"),
+    index: int = typer.Option(0, "--index", help="Index of sample to display"),
+    save: Optional[str] = typer.Option(None, "--save", help="Path to save the figure"),
+    show_bands: bool = typer.Option(False, "--show-bands", help="Display spectrum/SED and individual bands"),
+    no_gui: bool = typer.Option(False, "--no-gui", help="Don't open GUI window (save only)")
+):
+    """Load and display dataset samples."""
+    typer.echo(f"📊 Loading dataset split '{split}'...")
+    forward_args(ctx)
+    
+    # Build arguments for the display script
+    sys.argv = [sys.argv[0], "--split", split, "--index", str(index)]
+    if save:
+        sys.argv.extend(["--save", save])
+    if show_bands:
+        sys.argv.append("--show-bands")
+    if no_gui:
+        sys.argv.append("--no-gui")
+    
+    from fmb.data.load_display_data import main as display_main
+    display_main()
+
+@app.command()
 def paths(
     data: bool = typer.Option(False, "--data", help="Print DATA_ROOT only"),
     embeddings: bool = typer.Option(False, "--embeddings", help="Print EMB_ROOT only"),
@@ -152,18 +185,18 @@ def paths(
     """Display current path configuration."""
     P = load_paths()
     if data:
-        typer.echo(P.data)
+        typer.echo(P.dataset)
     elif embeddings:
         typer.echo(P.embeddings)
     elif checkpoints:
-        typer.echo(P.checkpoints)
+        typer.echo(P.base_weights)
     elif runs:
-        typer.echo(P.runs)
+        typer.echo(P.runs_root)
     else:
-        typer.echo(f"📍 DATA_ROOT:   {P.data}")
+        typer.echo(f"📍 DATA_ROOT:   {P.dataset}")
         typer.echo(f"📍 EMB_ROOT:    {P.embeddings}")
-        typer.echo(f"📍 CKPT_ROOT:   {P.checkpoints}")
-        typer.echo(f"📍 RUNS_ROOT:   {P.runs}")
+        typer.echo(f"📍 CKPT_ROOT:   {P.base_weights}")
+        typer.echo(f"📍 RUNS_ROOT:   {P.runs_root}")
         typer.echo(f"📍 CACHE_ROOT:  {P.cache}")
 
 if __name__ == "__main__":

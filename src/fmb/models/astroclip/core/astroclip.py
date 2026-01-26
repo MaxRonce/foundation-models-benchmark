@@ -43,7 +43,7 @@ class AstroClipModel(L.LightningModule):
             learnable_logit_scale (bool): Whether the logit scale should be learnable.
         """
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=['image_encoder', 'spectrum_encoder'])
 
         # Define the image and spectrum encoder
         self.image_encoder = image_encoder

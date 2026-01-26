@@ -5,7 +5,7 @@ It provides a PyTorch Dataset class `EuclidDESIDataset` and a function `display_
 to visualize images, spectra, and SEDs.
 
 Usage:
-    python -m scratch.load_display_data --index 5 --show-bands --save outputs/img_5.png
+    python src/fmb/data/load_display_data.py --index 5 --show-bands --save outputs/img_5.png
 """
 
 import argparse
@@ -14,6 +14,12 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 from random import sample
 import sys
 import warnings
+
+# Add src to pythonpath FIRST, before any local imports
+from pathlib import Path
+src_path = Path(__file__).resolve().parents[2]
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
 
 # Matplotlib defaults to interactive; switch to "Agg" if --no-gui is passed
 import matplotlib
@@ -47,13 +53,6 @@ except ImportError as e:
     ) from e
 
 from torch.utils.data import DataLoader
-from pathlib import Path
-
-# Add src to pythonpath
-src_path = Path(__file__).resolve().parents[2]
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
-
 from fmb.paths import load_paths
 
 HF_DATASET_ID = "msiudek/astroPT_euclid_Q1_desi_dr1_dataset" # Fallback if not in paths, but paths has default
@@ -366,10 +365,6 @@ def main(argv=None):
     except Exception as e:
         warnings.warn(f"Error during display: {e}")
         raise SystemExit(1)
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":
