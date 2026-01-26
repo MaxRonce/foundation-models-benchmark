@@ -25,7 +25,7 @@ import os
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -50,18 +50,19 @@ from fmb.data.datasets import AstroPTDataset, FMBDataConfig
 from fmb.paths import load_paths
 
 # Add external/astroPT/src to path for astropt package
-astropt_path = Path(__file__).resolve().parents[4] / "external" / "astroPT" / "src"
-if str(astropt_path) not in sys.path:
-    sys.path.insert(0, str(astropt_path))
+# We use an absolute path based on load_paths().repo_root
+paths = load_paths()
+astropt_src = paths.repo_root / "external" / "astroPT" / "src"
+if astropt_src.exists() and str(astropt_src) not in sys.path:
+    sys.path.insert(0, str(astropt_src))
 
-# CHANGED: Ensure astropt imports work (try/except block from existing file)
 try:
     from astropt.model import GPT, GPTConfig, ModalityConfig, ModalityRegistry
 except ImportError:
-    # If still fails, try the root astroPT folder if distinct
-    astropt_path_alt = Path(__file__).resolve().parents[4] / "astroPT" / "src"
-    if str(astropt_path_alt) not in sys.path:
-        sys.path.insert(0, str(astropt_path_alt))
+    # Fallback to local astroPT if it's not in external
+    astropt_src_alt = paths.repo_root / "src" / "fmb" / "external" / "astroPT" / "src"
+    if astropt_src_alt.exists() and str(astropt_src_alt) not in sys.path:
+        sys.path.insert(0, str(astropt_src_alt))
     from astropt.model import GPT, GPTConfig, ModalityConfig, ModalityRegistry
 
 # CHANGED: Relative import to local euclid_desi_dataset package
@@ -80,30 +81,30 @@ class TrainingConfig:
     
     # Output and logging
     out_dir: str = str(load_paths().retrained_weights / "astropt")
-    eval_interval: int = 100  # More frequent evaluation for production
-    eval_iters: int = 50  # Faster evaluation
-    log_interval: int = 20  # More frequent logging
+    eval_interval: int = 100
+    eval_iters: int = 50
+    log_interval: int = 20
     checkpoint_interval: int = 5000
     always_save_checkpoint: bool = False
     
     # Data
     train_split: str = "train"
     val_split: str = "test"
-    batch_size: int = 8  # Original batch size (patch_size was changed to 10, not batch_size)
+    batch_size: int = 8
     gradient_accumulation_steps: int = 4
-    num_workers: int = 0  # Disable multiprocessing to avoid disk space issues
+    num_workers: int = 0
     image_size: int = 224
     spectrum_length: int = 7781
     cache_dir: str = str(load_paths().dataset)
     
     # Model architecture
-    block_size: int = 1024  # Increased to handle longer sequences with small patch sizes
+    block_size: int = 1024
     image_patch_size: int = 16
-    spectrum_patch_size: int = 10  # Decreased from 256, following DESI success with smaller patches
+    spectrum_patch_size: int = 10
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
-    n_chan: int = 3  # RGB channels
+    n_chan: int = 3
     dropout: float = 0.0
     bias: bool = False
     
@@ -117,147 +118,105 @@ class TrainingConfig:
     warmup_iters: int = 2000
     lr_decay_iters: int = 30000
     min_lr: float = 6e-5
-    max_iters: int = 3000  # Longer production run for proper convergence
+    max_iters: int = 3000
     
     # System
     device: str = "cuda"
     dtype: str = "bfloat16"
-    compile: bool = True
+    compile: bool = False # Default to False on Windows
     log_via_wandb: bool = False
     wandb_project: str = "astropt-multimodal"
     wandb_run_name: str = None
 
 
-def parse_args() -> TrainingConfig:
+def parse_args() -> Tuple[TrainingConfig, Optional[str]]:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Train AstroPT on Euclid images + DESI spectra")
+    paths = load_paths()
     
+    # First pass: get config file
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config", type=str, default=None)
+    early_args, _ = parser.parse_known_args()
+
+    # Load defaults from YAML
+    yaml_config = {}
+    if early_args.config:
+        import yaml
+        with open(early_args.config, 'r') as f:
+            yaml_config = yaml.safe_load(f) or {}
+
+    # Helper to get default from (YAML or TrainingConfig)
+    def get_default(key, default_val):
+        return yaml_config.get(key, default_val)
+
+    # Second pass: full arguments
+    parser = argparse.ArgumentParser(description="Train AstroPT on Euclid images + DESI spectra")
     parser.add_argument("--config", type=str, default=None, help="Path to YAML config file")
     
-    # We use defaults from TrainingConfig for valid fallback
-    parser.add_argument("--out-dir", default=TrainingConfig.out_dir)
-    parser.add_argument("--train-split", default=TrainingConfig.train_split)
-    parser.add_argument("--val-split", default=TrainingConfig.val_split)
-    parser.add_argument("--batch-size", type=int, default=TrainingConfig.batch_size)
-    parser.add_argument("--grad-accum", type=int, default=TrainingConfig.gradient_accumulation_steps)
-    parser.add_argument("--num-workers", type=int, default=TrainingConfig.num_workers)
-    parser.add_argument("--image-size", type=int, default=TrainingConfig.image_size)
-    parser.add_argument("--max-iters", type=int, default=TrainingConfig.max_iters)
-    parser.add_argument("--eval-interval", type=int, default=TrainingConfig.eval_interval)
-    parser.add_argument("--eval-iters", type=int, default=TrainingConfig.eval_iters)
-    parser.add_argument("--log-interval", type=int, default=TrainingConfig.log_interval)
-    parser.add_argument("--device", default=TrainingConfig.device, help="Device to use (cpu, cuda, etc.)")
+    # Output and Data
+    parser.add_argument("--out-dir", default=get_default("out_dir", str(paths.retrained_weights / "astropt")))
+    parser.add_argument("--cache-dir", default=get_default("cache_dir", str(paths.dataset)))
+    parser.add_argument("--train-split", default=get_default("train_split", "train"))
+    parser.add_argument("--val-split", default=get_default("val_split", "test"))
     
-    # Booleans are tricky. Default to None to detect if user specified it.
-    parser.add_argument("--compile", action="store_true", default=None)
-    parser.add_argument("--no-compile", dest="compile", action="store_false", default=None)
+    # Optimization
+    parser.add_argument("--batch-size", type=int, default=get_default("batch_size", 8))
+    parser.add_argument("--grad-accum", dest="gradient_accumulation_steps", type=int, 
+                        default=get_default("gradient_accumulation_steps", 4))
+    parser.add_argument("--learning-rate", "--lr", type=float, default=get_default("learning_rate", 6e-4))
+    parser.add_argument("--max-iters", type=int, default=get_default("max_iters", 3000))
     
-    parser.add_argument("--log-wandb", action="store_true", default=None)
-    parser.add_argument("--wandb-project", default=TrainingConfig.wandb_project)
-    parser.add_argument("--wandb-run-name", default=None)
+    # Logging
+    parser.add_argument("--log-interval", type=int, default=get_default("log_interval", 20))
+    parser.add_argument("--eval-interval", type=int, default=get_default("eval_interval", 100))
+    parser.add_argument("--eval-iters", type=int, default=get_default("eval_iters", 50))
+    parser.add_argument("--log-wandb", dest="log_via_wandb", action="store_true", default=get_default("log_via_wandb", False))
+    parser.add_argument("--wandb-project", default=get_default("wandb_project", "astropt-multimodal"))
+    parser.add_argument("--wandb-run-name", default=get_default("wandb_run_name", None))
+    
+    # Resume
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
     parser.add_argument("--resume-best", action="store_true", default=False, help="Resume from best checkpoint in out_dir")
-    parser.add_argument("--cache-dir", default=TrainingConfig.cache_dir, help="Path to HuggingFace cache / dataset root")
     
+    # System
+    parser.add_argument("--device", default=get_default("device", "cuda"))
+    parser.add_argument("--num-workers", type=int, default=get_default("num_workers", 0))
+    parser.add_argument("--compile", action="store_true", default=get_default("compile", False))
+
     args = parser.parse_args()
     
-    # 1. Start with class defaults
+    # Construct final config
     config_dict = TrainingConfig().__dict__.copy()
     
-    # 2. Update with YAML if provided
-    if args.config:
-        import yaml
-        with open(args.config, 'r') as f:
-            yaml_config = yaml.safe_load(f)
-            if yaml_config:
-                # Only update keys that exist in config_dict to avoid injection
-                for k, v in yaml_config.items():
-                    if k in config_dict:
-                        config_dict[k] = v
-                    else:
-                        print(f"Warning: Ignoring unknown config key from YAML: {k}")
-
-    # 3. Update with CLI args if they differ from class Defaults OR are explicitly provided (for booleans)
-    # Note: args.out_dir has default=TrainingConfig.out_dir.
-    # If user didn't allow, args.out_dir == TrainingConfig.out_dir.
-    # If YAML changed out_dir, we don't want to overwrite it with "default" args.out_dir.
-    # BUT we can't easily know if args.out_dir came from user or default.
-    # EXCEPT checking sys.argv, or setting defaults to None.
+    # Update with YAML
+    config_dict.update(yaml_config)
     
-    # To properly support "YAML overrides Default, CLI overrides YAML", the argparse defaults should be None (or suppressed).
-    # But we set them above.
-    # Let's check against sys.argv for explicit overrides as a robust workaround.
-    import sys
-    
-    def is_arg_passed(name):
-        return any(arg.startswith(f"--{name}") for arg in sys.argv)
+    # Update with CLI (only if explicitly passed, but argparse already handled defaults correctly now)
+    # Actually, we can just use vars(args) and filter None? 
+    # But argparse defaults are NOT None.
+    # The better way is what we did above: set argparse defaults to yaml_values.
+    for k, v in vars(args).items():
+        if k != "config" and k != "resume_best" and k != "resume":
+            config_dict[k] = v
 
-    if is_arg_passed("out-dir"): config_dict["out_dir"] = args.out_dir
-    if is_arg_passed("train-split"): config_dict["train_split"] = args.train_split
-    if is_arg_passed("val-split"): config_dict["val_split"] = args.val_split
-    if is_arg_passed("batch-size"): config_dict["batch_size"] = args.batch_size
-    if is_arg_passed("grad-accum"): config_dict["gradient_accumulation_steps"] = args.grad_accum
-    if is_arg_passed("num-workers"): config_dict["num_workers"] = args.num_workers
-    if is_arg_passed("image-size"): config_dict["image_size"] = args.image_size
-    if is_arg_passed("max-iters"): config_dict["max_iters"] = args.max_iters
-    if is_arg_passed("eval-interval"): config_dict["eval_interval"] = args.eval_interval
-    if is_arg_passed("eval-iters"): config_dict["eval_iters"] = args.eval_iters
-    if is_arg_passed("log-interval"): config_dict["log_interval"] = args.log_interval
-    if is_arg_passed("device"): config_dict["device"] = args.device
-    if is_arg_passed("cache-dir"): config_dict["cache_dir"] = args.cache_dir
-    if is_arg_passed("wandb-project"): config_dict["wandb_project"] = args.wandb_project
-    if args.wandb_run_name: config_dict["wandb_run_name"] = args.wandb_run_name
-    
-    # Handle tri-state booleans (None, True, False)
-    if args.compile is not None:
-        config_dict["compile"] = args.compile
-    if args.log_wandb is not None:
-        config_dict["log_via_wandb"] = args.log_wandb
-
-    # Create config object
     config = TrainingConfig(**config_dict)
     
-    # Ensure types are correct (yaml might load scientific notation as string sometimes or if quotes were used)
-    try:
-        config.learning_rate = float(config.learning_rate)
-        config.min_lr = float(config.min_lr)
-        config.weight_decay = float(config.weight_decay)
-        config.grad_clip = float(config.grad_clip)
-        config.dropout = float(config.dropout)
-        
-        config.batch_size = int(config.batch_size)
-        config.gradient_accumulation_steps = int(config.gradient_accumulation_steps)
-        config.image_size = int(config.image_size)
-        config.image_patch_size = int(config.image_patch_size)
-        config.spectrum_patch_size = int(config.spectrum_patch_size)
-        config.spectrum_length = int(config.spectrum_length)
-        config.n_layer = int(config.n_layer)
-        config.n_head = int(config.n_head)
-        config.n_embd = int(config.n_embd)
-        config.block_size = int(config.block_size)
-        config.max_iters = int(config.max_iters)
-        config.warmup_iters = int(config.warmup_iters)
-        config.lr_decay_iters = int(config.lr_decay_iters)
-        config.eval_interval = int(config.eval_interval)
-        config.eval_iters = int(config.eval_iters)
-        config.log_interval = int(config.log_interval)
-    except ValueError as e:
-        print(f"Error casting config values: {e}")
-        # Proceeding hoping for the best or raising? Raising is safer.
-        raise e
+    # Type conversion
+    for key in ["learning_rate", "min_lr", "weight_decay", "grad_clip", "dropout"]:
+        if hasattr(config, key): setattr(config, key, float(getattr(config, key)))
+    for key in ["batch_size", "gradient_accumulation_steps", "image_size", "max_iters"]:
+        if hasattr(config, key): setattr(config, key, int(getattr(config, key)))
 
-    # Validate WandB availability
-    if config.log_via_wandb and not _WANDB_AVAILABLE:
-        print("Warning: WandB requested but not available. Disabling.")
-        config.log_via_wandb = False
-    
-    # Handle resume arguments
-    resume_path = None
+    # Resume path
+    resume_path = args.resume
     if args.resume_best:
         resume_path = os.path.join(config.out_dir, "ckpt_best.pt")
-    elif args.resume:
-        resume_path = args.resume
     
+    # Validate WandB
+    if config.log_via_wandb and not _WANDB_AVAILABLE:
+        print("WandB not available. Disabling.")
+        config.log_via_wandb = False
+        
     return config, resume_path
 
 
