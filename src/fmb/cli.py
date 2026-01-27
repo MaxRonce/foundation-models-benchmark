@@ -226,5 +226,26 @@ def paths(
         typer.echo(f"RUNS_ROOT:   {P.runs_root}")
         typer.echo(f"CACHE_ROOT:  {P.cache}")
 
+
+# --- Viz Commands ---
+viz_app = typer.Typer(help="Stage 05: Visualizations for publication and inspection.")
+app.add_typer(viz_app, name="viz")
+
+@viz_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def paper_umap(
+    ctx: typer.Context,
+    slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
+):
+    """Generate the publication-ready combined UMAP figure (AstroPT, AION, AstroCLIP)."""
+    if slurm:
+        run_slurm("05_viz/paper_umap.sbatch", "viz paper_umap", ctx.args)
+        return
+
+    typer.echo("Generating publication combined UMAP plot locally...")
+    forward_args(ctx)
+    from fmb.viz.plot_paper_combined_umap import main as run_task
+    run_task()
+
+
 if __name__ == "__main__":
     app()

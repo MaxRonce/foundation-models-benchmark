@@ -25,50 +25,20 @@ import numpy as np
 import torch
 from astropy.io import fits
 from tqdm import tqdm
-import umap
+import umap.umap_ as umap
 
-from scratch.display_outlier_images import (
+from fmb.viz.utils import (
     load_index,
     collect_samples,
     collect_samples_with_index,
     prepare_rgb_image,
+    load_viz_style,
 )
-from scratch.load_display_data import EuclidDESIDataset
+from fmb.data.load_display_data import EuclidDESIDataset
+from fmb.paths import load_paths
 
 # --- Publication Style Settings ---
-try:
-    plt.rcParams.update({
-        "text.usetex": True,
-        "font.family": "serif",
-        "font.serif": ["Computer Modern Roman"],
-    })
-except Exception:
-    print("Warning: LaTeX not available, falling back to STIX fonts.")
-    plt.rcParams.update({
-        "text.usetex": False,
-        "mathtext.fontset": "stix",
-        "font.family": "STIXGeneral",
-    })
-
-plt.rcParams.update({
-    "font.size": 10,
-    "axes.labelsize": 10,
-    "axes.titlesize": 12,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "legend.fontsize": 8,
-    "figure.titlesize": 14,
-    "axes.linewidth": 1.0,
-    "xtick.major.width": 1.0,
-    "ytick.major.width": 1.0,
-    "xtick.minor.width": 0.8,
-    "ytick.minor.width": 0.8,
-    "xtick.direction": "in",
-    "ytick.direction": "in",
-    "lines.linewidth": 1.0,
-    "savefig.bbox": "tight",
-    "savefig.pad_inches": 0.05,
-})
+load_viz_style()
 
 # Parameters describing WHAT to load from files
 KEY_ASTROPT_MSG = "embedding_joint"
@@ -330,7 +300,7 @@ def plot_scatter_panel(
                 vmin=vmin, vmax=vmax
             )
     
-    ax.set_title(title, fontsize=16, pad=10)
+    ax.set_title(title, fontsize=24, pad=15)
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_aspect('auto')
@@ -368,7 +338,7 @@ def plot_thumbnail_panel(
             
     add_thumbnails(ax, ordered_cells, ordered_samples, grid_rows, grid_cols)
     
-    ax.set_title(title, fontsize=16, pad=10)
+    ax.set_title(title, fontsize=24, pad=15)
     ax.set_xlim(0, grid_cols)
     ax.set_ylim(0, grid_rows)
     ax.set_aspect('auto')
@@ -413,15 +383,15 @@ def plot_similarity_histogram(
     ax.axvline(mean_val, color='black', linestyle='--', linewidth=1.5, label=f'Mean: {mean_val:.2f}')
     ax.axvline(median_val, color='red', linestyle=':', linewidth=1.5, label=f'Median: {median_val:.2f}')
     
-    ax.set_title(title, fontsize=16, pad=10)
+    ax.set_title(title, fontsize=24, pad=15)
     ax.set_xlim(0, 1)
     
     # Hide y-axis ticks/labels as density is relative
     ax.set_yticks([])
-    ax.set_ylabel("Density", fontsize=10)
-    ax.set_xlabel("|Cosine Similarity|", fontsize=10)
+    ax.set_ylabel("Density", fontsize=32)
+    ax.set_xlabel("|Cosine Similarity|", fontsize=32)
     
-    ax.legend(loc='upper left', fontsize=8, frameon=False)
+    ax.legend(loc='upper left', fontsize=26, frameon=False)
     
     # Add frame
     for spine in ax.spines.values():
@@ -430,21 +400,23 @@ def plot_similarity_histogram(
         spine.set_color('black')
 
 def main(argv: Sequence[str] | None = None) -> None:
+    paths = load_paths()
+    
     parser = argparse.ArgumentParser(description="Generate publication combined UMAP figure (AstroPT, AION, AstroCLIP)")
-    parser.add_argument("--aion-embeddings", required=True, help="AION .pt file")
-    parser.add_argument("--astropt-embeddings", required=True, help="AstroPT .pt file")
-    parser.add_argument("--astroclip-embeddings", required=True, help="AstroCLIP .pt file")
-    parser.add_argument("--catalog", required=True, help="FITS catalog")
-    parser.add_argument("--index", required=True, help="Index CSV mapping object_id -> split/index")
-    parser.add_argument("--coords-cache", required=True, help="Path to pre-computed coords .pt file")
-    parser.add_argument("--physical-param", required=True, help="Parameter to color by")
-    parser.add_argument("--save", default="paper_combined_umap.png", help="Output filename")
+    parser.add_argument("--aion-embeddings", default=paths.embeddings / "aions_embeddings.pt", help="AION .pt file")
+    parser.add_argument("--astropt-embeddings", default=paths.embeddings / "astropt_embeddings.pt", help="AstroPT .pt file")
+    parser.add_argument("--astroclip-embeddings", default=paths.embeddings / "embeddings_astroclip.pt", help="AstroCLIP .pt file")
+    parser.add_argument("--catalog", default=paths.repo_root / "data" / "DESI_DR1_Euclid_Q1_dataset_catalog_EM.fits", help="FITS catalog")
+    parser.add_argument("--index", default=paths.repo_root / "data" / "euclid_index.csv", help="Index CSV mapping object_id -> split/index")
+    parser.add_argument("--coords-cache", default=paths.repo_root / "paper" / "umap_coords_cache.pt", help="Path to pre-computed coords .pt file")
+    parser.add_argument("--physical-param", default="Z", help="Parameter to color by")
+    parser.add_argument("--save", default="paper/paper_combined_umap.png", help="Output filename")
     parser.add_argument("--grid-rows", type=int, default=25, help="Grid rows")
     parser.add_argument("--grid-cols", type=int, default=25, help="Grid cols")
     parser.add_argument("--random-state", type=int, default=42, help="Random state")
-    parser.add_argument("--cache-dir", default="/n03data/ronceray/datasets", help="Dataset cache dir")
-    parser.add_argument("--hexbin", action="store_true", help="Use hexbin plot instead of scatter (Default: True)")
-    parser.add_argument("--show-similarity", action="store_true", help="Add 3rd row with cosine similarity (Images vs Spectra)")
+    parser.add_argument("--cache-dir", default=str(paths.dataset), help="Dataset cache dir")
+    parser.add_argument("--hexbin", action="store_true", default=True, help="Use hexbin plot instead of scatter (Default: True)")
+    parser.add_argument("--show-similarity", action="store_true", default=True, help="Add 3rd row with cosine similarity (Images vs Spectra)")  # Default True now
     parser.add_argument("--no-hexbin", action="store_false", dest="hexbin", help="Disable hexbin plot")
     
     parser.set_defaults(hexbin=True)
@@ -568,16 +540,29 @@ def main(argv: Sequence[str] | None = None) -> None:
     
     def get_values(ids):
         vals = []
+        matches = 0
+        samples = 0
+        print(f"DEBUG: Processing {len(ids)} IDs...")
+        if len(ids) > 0:
+            print(f"DEBUG: Sample ID (embedding): '{ids[0]}' (type: {type(ids[0])})")
+            cat_sample = next(iter(catalog.keys()))
+            print(f"DEBUG: Sample ID (catalog): '{cat_sample}' (type: {type(cat_sample)})")
+            
         for oid in ids:
+            # Ensure strict string matching
+            oid_str = str(oid).strip()
             val = np.nan
-            if oid in catalog:
+            if oid_str in catalog:
+                matches += 1
                 try:
-                    raw = catalog[oid].get(param)
+                    raw = catalog[oid_str].get(param)
                     if raw is not None:
                         val = float(raw) if not hasattr(raw, 'item') else float(raw.item())
                 except:
                     pass
             vals.append(val)
+            samples += 1
+        print(f"DEBUG: Found {matches}/{samples} matches in catalog for param '{param}'")
         return np.array(vals)
         
     values_aion = get_values(aion_ids_full)
@@ -697,10 +682,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     # We place text relative to first axes of each row
     # Row 1: Latent Space
     axes[0, 0].text(-0.15, 0.5, "Latent Space\n(Colored by Param)", transform=axes[0, 0].transAxes, 
-                    rotation=90, va='center', ha='right', fontsize=18, fontweight='bold')
+                    rotation=90, va='center', ha='right', fontsize=28, fontweight='bold')
     # Row 2: Thumbnails
     axes[1, 0].text(-0.15, 0.5, "Representative\nThumbnails", transform=axes[1, 0].transAxes, 
-                    rotation=90, va='center', ha='right', fontsize=18, fontweight='bold')
+                    rotation=90, va='center', ha='right', fontsize=28, fontweight='bold')
                     
     # Middle Row: Thumbnails (Original Row 2)
     # If we want Similarity in the middle, we'd change indices.
@@ -723,7 +708,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.show_similarity:
         # Row 3: Similarity
         axes[2, 0].text(-0.15, 0.5, "Cosine Similarity\n(Images vs Spectra)", transform=axes[2, 0].transAxes, 
-                        rotation=90, va='center', ha='right', fontsize=18, fontweight='bold')
+                        rotation=90, va='center', ha='right', fontsize=28, fontweight='bold')
         
         # Bottom Row: Similarity Histograms
         # Use different colors for each model if desired, or uniform
@@ -752,9 +737,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         if label == "Z" or label.lower() == "redshift":
             label = r"Redshift $z$"
         
-        cbar = fig.colorbar(sc, cax=cbar_ax)
-        cbar.set_label(label, fontsize=14)
-        cbar.solids.set_edgecolor("face")
+    cbar = fig.colorbar(sc, cax=cbar_ax)
+    cbar.set_label(label, fontsize=24)
+    cbar.ax.tick_params(labelsize=18)
+    cbar.solids.set_edgecolor("face")
 
 
 

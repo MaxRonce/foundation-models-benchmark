@@ -178,8 +178,6 @@ class EuclidDESIDataset(torch.utils.data.Dataset):
         # Process spectrum data
         spectrum_data = None
         if sample.get('spectrum') is not None:
-            if self.verbose:
-                print(f"Sample spectrum keys: {sample['spectrum'].keys()}")
             flux = sample['spectrum'].get('flux')
             wavelength = sample['spectrum'].get('wavelength')
             error = sample['spectrum'].get('error')

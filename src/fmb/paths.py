@@ -142,7 +142,10 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
     analysis_path = resolve("analysis_path", "outputs/analysis")
     
     # Generic/Legacy
-    emb_path = resolve("emb_root", "embeddings")
+    emb_path = resolve("embeddings_path", "embeddings") # Also support embeddings_path
+    if "emb_root" in cfg:
+        emb_path = _p(cfg["emb_root"])
+    
     cache_path = resolve("cache_root", "cache")
     runs_path = resolve("runs_root", "runs")
 
