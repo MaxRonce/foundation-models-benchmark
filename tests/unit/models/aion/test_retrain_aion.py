@@ -59,8 +59,6 @@ from fmb.models.aion.model import (
     EUCLID_BANDS
 )
 
-# TrainingConfig no longer exists as a class, it's argparse-based now.
-# But we can still test the defaults if we want to mock argparse or similar.
 TrainingConfig = None
 AionDataset = EuclidImageDataset
 FMBDataConfig = MagicMock() # Still used in one test

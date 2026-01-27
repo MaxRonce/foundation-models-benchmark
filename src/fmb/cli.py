@@ -222,29 +222,279 @@ def multimodal(
 
 
 
-@app.command()
-def analyze(
+# --- Analyze Commands ---
+analyze_app = typer.Typer(help="Stage 04: Analyze embeddings and detection results.")
+app.add_typer(analyze_app, name="analyze")
+
+@analyze_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def predict_params(
     ctx: typer.Context,
-    task: str = typer.Argument(..., help="Analysis task (predict_params, tsne)"),
     slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
 ):
-    """Stage 04: Analyze embeddings, predict physics, or visualize."""
+    """Predict physical parameters (redshift, etc.) from embeddings."""
     if slurm:
-        run_slurm(f"04_analysis/{task}.sbatch", f"analysis {task}", ctx.args)
+        run_slurm("04_analysis/predict_params.sbatch", "analysis predict_params", ctx.args)
         return
 
-    typer.echo(f"📊 Running analysis {task} locally...")
+    typer.echo(f"Running physical parameter prediction locally...")
     forward_args(ctx)
-
-    if task == "predict_params":
-        from fmb.analysis.predict_physical_params import main as run_task
-    elif task == "tsne":
-        from fmb.viz.plot_paper_tsne_comparison import main as run_task
-    else:
-        typer.echo(f"❌ Unknown task: {task}")
-        raise typer.Exit(1)
-    
+    from fmb.analysis.predict_physical_params import main as run_task
     run_task()
+
+@analyze_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def tsne(
+    ctx: typer.Context,
+    slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
+):
+    """Generate t-SNE comparison plots."""
+    if slurm:
+        run_slurm("04_analysis/tsne.sbatch", "analysis tsne", ctx.args)
+        return
+
+    typer.echo(f"Running t-SNE analysis locally...")
+    forward_args(ctx)
+    from fmb.viz.plot_paper_tsne_comparison import main as run_task
+    run_task()
+
+@analyze_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def outliers(
+    ctx: typer.Context,
+    input_csv: str = typer.Option(None, "--input-csv", help="Path to all_scores.csv"),
+    top_k: int = typer.Option(200, "--top-k", help="Top-K threshold"),
+    slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job")
+):
+    """
+    Analyze Multimodal Anomaly Results (Correlations, Uplift, Overlap).
+    Input: runs/outliers/multimodal/all_scores.csv
+    Output: runs/analysis/outliers/
+    """
+    if slurm:
+        # submit slurm
+        typer.echo("Slurm not configured for analysis outliers yet.")
+        pass
+
+    typer.echo("Analyzing anomaly results...")
+    
+    from fmb.analysis import outliers
+    
+    args = []
+    if input_csv: args.extend(["--input_csv", input_csv])
+    if top_k: args.extend(["--top-k", str(top_k)])
+    
+    outliers.main(args)
+
+@analyze_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def similarity(
+    ctx: typer.Context,
+    emb_path: Optional[str] = typer.Option(None, "--embeddings", help="Path to embeddings .pt file (optional, auto-detected if omitted)"),
+    model: Optional[str] = typer.Option(None, "--model", help="Name of the model (or 'all'). Default: all"),
+    queries: Optional[List[str]] = typer.Option(None, "--query", help="Object ID(s) to query"),
+    query_csv: Optional[str] = typer.Option(None, "--query-csv", help="CSV with object_id column to query"),
+    n_similar: int = typer.Option(5, "--n-similar", help="Number of neighbors"),
+    save: Optional[str] = typer.Option(None, "--save", help="Output image path"),
+    cache_dir: Optional[str] = typer.Option(None, "--cache-dir"),
+):
+    """
+    Visual Similarity Search.
+    Finds and displays nearest neighbors (Images + Spectra).
+    """
+    from fmb.analysis import similarity
+    from fmb.data.utils import read_object_ids
+    from fmb.paths import load_paths
+    from pathlib import Path
+    
+    paths = load_paths()
+    
+    # 1. Resolve Queries
+    q_ids = []
+    if queries: q_ids.extend(queries)
+    if query_csv:
+        q_ids.extend(read_object_ids([Path(query_csv)]))
+        
+    if not q_ids:
+        typer.echo("❌ No query IDs provided.")
+        raise typer.Exit(1)
+        
+    # 2. Resolve Tasks (Model, Path)
+    tasks = []
+    
+    if emb_path:
+        # Explicit path provided
+        tsk_name = model if model else "CustomModel"
+        tasks.append((tsk_name, Path(emb_path)))
+    else:
+        # Auto-detect
+        emb_root = paths.embeddings
+        if not emb_root.exists():
+            typer.echo(f"❌ Embeddings root not found: {emb_root}")
+            raise typer.Exit(1)
+            
+        candidates = []
+        # Simple heuristic: scan directory for known .pt files
+        pt_files = list(emb_root.glob("*embeddings*.pt"))
+        
+        # Also check subdirectories if organized by model?
+        # paths.embeddings might contain 'aion/embeddings.pt', etc.
+        # But commonly they are in root of run.
+        
+        for p in pt_files:
+            fname = p.name.lower()
+            m_name = "Unknown"
+            if "astropt" in fname: m_name = "AstroPT"
+            elif "astroclip" in fname: m_name = "AstroCLIP"
+            elif "aion" in fname: m_name = "AION"
+            else: m_name = fname.replace("embeddings", "").replace(".pt", "").strip("_").capitalize()
+            candidates.append((m_name, p))
+            
+        # Filter
+        if model and model.lower() != "all":
+            tasks = [t for t in candidates if t[0].lower() == model.lower()]
+            if not tasks:
+                 typer.echo(f"❌ No embeddings found matching model '{model}'. Found: {[c[0] for c in candidates]}")
+                 raise typer.Exit(1)
+        else:
+            tasks = candidates
+
+    if not tasks:
+         typer.echo(f"❌ No embedding files found in {paths.embeddings}")
+         raise typer.Exit(1)
+         
+    # 3. Resolve Paths
+    if save:
+        out_path = Path(save)
+    else:
+        # Default save location
+        analysis_dir = paths.analysis / "similarity"
+        analysis_dir.mkdir(parents=True, exist_ok=True)
+        if len(tasks) == 1:
+            name = tasks[0][0].lower()
+            out_path = analysis_dir / f"similarity_{name}.png"
+        else:
+            out_path = analysis_dir / "similarity_combined.png"
+            
+    if not cache_dir:
+        cache_dir = str(paths.dataset)
+
+    typer.echo(f"🔍 Finding similar objects for {len(q_ids)} queries...")
+    typer.echo(f"   Tasks: {[t[0] for t in tasks]}")
+    typer.echo(f"   Output: {out_path}")
+    
+    similarity.visualize_similarity(
+        query_ids=q_ids,
+        tasks=tasks,
+        n_similar=n_similar,
+        output_path=out_path,
+        cache_dir=cache_dir
+    )
+
+@analyze_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def neighbor_ranks(
+    ctx: typer.Context,
+    emb_path: Optional[str] = typer.Option(None, "--embeddings", help="Path to embeddings .pt file (optional, auto-detected if omitted)"),
+    scores_path: Optional[str] = typer.Option(None, "--scores", help="Path to anomaly_scores.csv (optional, auto-detected if omitted)"),
+    model: Optional[str] = typer.Option(None, "--model", help="Filter by model name (default: all)"),
+    queries: Optional[List[str]] = typer.Option(None, "--query", help="Object ID(s) to query"),
+    query_csv: Optional[str] = typer.Option(None, "--query-csv", help="CSV with object_id column to query"),
+    n_similar: int = typer.Option(10, "--n-similar", help="Number of neighbors"),
+    out_dir: Optional[str] = typer.Option(None, "--out-dir", help="Output directory"),
+):
+    """
+    Analyze Rank Distribution of Neighbors.
+    Checks if neighbors of anomalies are also anomalies.
+    """
+    from fmb.analysis import similarity
+    from fmb.data.utils import read_object_ids
+    from fmb.paths import load_paths
+    from pathlib import Path
+    
+    paths = load_paths()
+    
+    # 1. Resolve Queries
+    q_ids = []
+    if queries: q_ids.extend(queries)
+    if query_csv:
+        q_ids.extend(read_object_ids([Path(query_csv)]))
+        
+    if not q_ids:
+        typer.echo("❌ No query IDs provided.")
+        raise typer.Exit(1)
+
+    # 2. Resolve Tasks (Model, EmbPath, ScorePath)
+    tasks = []
+    
+    if emb_path and scores_path:
+        # Explicit
+        m_name = model if model else "CustomModel"
+        tasks.append((m_name, Path(emb_path), Path(scores_path)))
+    else:
+        # Auto-detect
+        emb_root = paths.embeddings
+        score_root = paths.outliers # Usually where anomaly_scores_*.csv live
+        
+        candidates = []
+        pt_files = list(emb_root.glob("*embeddings*.pt"))
+        
+        for p in pt_files:
+            fname = p.name.lower()
+            m_name = "Unknown"
+            if "astropt" in fname: m_name = "AstroPT"
+            elif "astroclip" in fname: m_name = "AstroCLIP"
+            elif "aion" in fname: m_name = "AION"
+            else: m_name = fname.replace("embeddings", "").replace(".pt", "").strip("_").capitalize()
+            
+            # Try to find matching score
+            slug = m_name.lower().replace(" ", "")
+            possible_names = [
+                f"anomaly_scores_{slug}.csv",
+                f"scores_{slug}.csv",
+                f"{slug}_scores.csv"
+            ]
+            
+            found_score = None
+            for sname in possible_names:
+                sp = score_root / sname
+                if sp.exists():
+                    found_score = sp
+                    break
+            
+            if found_score:
+                candidates.append((m_name, p, found_score))
+            else:
+                pass
+                
+        # Filter
+        if model and model.lower() != "all":
+            tasks = [t for t in candidates if t[0].lower() == model.lower()]
+            if not tasks:
+                 typer.echo(f"❌ No valid tasks (embedding+scores) found matching model '{model}'.")
+                 raise typer.Exit(1)
+        else:
+            tasks = candidates
+
+    if not tasks:
+        typer.echo("❌ No valid tasks found. Ensure embeddings(.pt) and scores(.csv) exist and match.")
+        typer.echo(f"   Embeddings: {paths.embeddings}")
+        typer.echo(f"   Scores: {paths.outliers}")
+        raise typer.Exit(1)
+
+    # 3. Resolve Output
+    if out_dir:
+        out_path = Path(out_dir)
+    else:
+        out_path = paths.analysis / "neighbors"
+        
+    out_path.mkdir(parents=True, exist_ok=True)
+    
+    typer.echo(f"📊 Analyzing neighbor ranks for {len(q_ids)} queries...")
+    typer.echo(f"   Tasks: {[(t[0], str(t[2].name)) for t in tasks]}")
+    typer.echo(f"   Output: {out_path}")
+    
+    similarity.analyze_neighbor_ranks(
+        query_ids=q_ids,
+        tasks=tasks,
+        n_similar=n_similar,
+        output_dir=out_path
+    )
 
 @app.command()
 def display(

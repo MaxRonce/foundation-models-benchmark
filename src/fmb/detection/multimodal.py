@@ -91,6 +91,11 @@ def compute_scores(df: pd.DataFrame) -> pd.DataFrame:
         sub["score_mm_geo"] = sub["p_mis"] * np.sqrt(sub["p_img"] * sub["p_spec"])
         sub["score_mm_min"] = sub["p_mis"] * np.minimum(sub["p_img"], sub["p_spec"])
         
+        # Uplift: How much does multimodal fusion add over the best single modality?
+        # (Assuming p_mis is part of the fusion, so we compare fusion result vs single modality ranks)
+        # Note: p_img/p_spec are percentiles (0..1).
+        sub["uplift_mm"] = sub["score_mm_geo"] - np.maximum(sub["p_img"], sub["p_spec"])
+        
         OUT.append(sub)
         
     return pd.concat(OUT, ignore_index=True) if OUT else pd.DataFrame()
