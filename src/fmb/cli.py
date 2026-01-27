@@ -170,15 +170,57 @@ def outliers(
     
     run.main(run_args)
 
+@detect_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def cosine(
+    ctx: typer.Context,
+    aion_embeddings: Optional[str] = typer.Option(None, "--aion-embeddings"),
+    astropt_embeddings: Optional[str] = typer.Option(None, "--astropt-embeddings"),
+    astroclip_embeddings: Optional[str] = typer.Option(None, "--astroclip-embeddings"),
+):
+    """
+    Compute Cosine Similarity (Image vs Spectrum).
+    Output: runs/outliers/cosine_scores_{model}.csv
+    """
+    from fmb.detection import cosine
+    # Construct args manually (Typer -> argparse)
+    args = []
+    if aion_embeddings: args.extend(["--aion-embeddings", aion_embeddings])
+    if astropt_embeddings: args.extend(["--astropt-embeddings", astropt_embeddings])
+    if astroclip_embeddings: args.extend(["--astroclip-embeddings", astroclip_embeddings])
+    
+    cosine.main(args)
 
-# Legacy Detect (Commented out to replace with Group)
-# @app.command()
-# def detect(
-#     ctx: typer.Context,
-#     method: str = typer.Argument(..., help="Detection method (cosine, nfs, iforest)"),
-#     slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
-# ):
-#     ...
+@detect_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def multimodal(
+    ctx: typer.Context,
+    top_k: int = typer.Option(200, "--top-k", help="Number of top anomalies to export per model (ranked by fusion score)."),
+    fusion: str = typer.Option("geo", "--fusion", help="Fusion method: 'geo' (Geometric Mean), 'min' (Minimum), 'avg' (Average)."),
+    t_img: float = typer.Option(0.99, "--t-img", help="Filter: Only keep objects in top P percentile of Image Density Anomaly."),
+    t_spec: float = typer.Option(0.99, "--t-spec", help="Filter: Only keep objects in top P percentile of Spectrum Density Anomaly."),
+    t_mis: float = typer.Option(0.99, "--t-mis", help="Filter: Only keep objects in top P percentile of Cosine Mismatch."),
+):
+    """
+    Combine & Filter Anomalies (Multimodal Fusion).
+    
+    Generates a final list of anomalies by combining:
+    1. Cosine Mismatch (Image vs Spectrum)
+    2. Image Density Outliers (Normalizing Flows)
+    3. Spectrum Density Outliers (Normalizing Flows)
+    
+    Outputs are saved to: runs/outliers/multimodal/
+    """
+    from fmb.detection import multimodal
+    
+    args = [
+        "--top-k", str(top_k),
+        "--fusion", fusion,
+        "--t-img", str(t_img),
+        "--t-spec", str(t_spec),
+        "--t-mis", str(t_mis),
+    ]
+    multimodal.main(args)
+
+
 
 @app.command()
 def analyze(
