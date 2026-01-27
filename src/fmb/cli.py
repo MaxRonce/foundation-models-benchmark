@@ -517,6 +517,27 @@ def regression(
         output_dir=out_path
     )
 
+@analyze_app.command()
+def displacement(
+    ctx: typer.Context,
+    config: Optional[str] = typer.Option(None, "--config", help="Path to displacement config.yaml"),
+    out_dir: Optional[str] = typer.Option(None, "--out-dir", help="Output directory"),
+):
+    """
+    Run displacement analysis (retention across models/modalities).
+    Generates Multi-Model, Cross-Modality, and Extensive plots.
+    """
+    from fmb.analysis import displacement
+    from pathlib import Path
+    
+    cfg_path = Path(config) if config else None
+    out_path = Path(out_dir) if out_dir else None
+    
+    displacement.run_analysis(
+        config_path=cfg_path,
+        output_dir=out_path
+    )
+
 @app.command()
 def display(
     ctx: typer.Context,
