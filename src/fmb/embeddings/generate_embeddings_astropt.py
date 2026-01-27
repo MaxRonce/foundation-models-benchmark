@@ -4,23 +4,21 @@ Run inference with the trained astroPT multimodal model and export embeddings.
 """
 import argparse
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import sys
 import yaml
 import os
 import warnings
 
-# Add src to path to allow direct execution
-src_path = str(Path(__file__).resolve().parents[2])
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
+# Use fmb.paths
+from fmb.paths import load_paths
+
+# Imports from local package
+from fmb.data.datasets import AstroPTDataset, FMBDataConfig
 
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
-from fmb.data.datasets import AstroPTDataset, FMBDataConfig
-from fmb.paths import load_paths
 
 # Add external/astroPT/src to path
 astropt_path = Path(__file__).resolve().parents[3] / "external" / "astroPT" / "src"
@@ -37,7 +35,6 @@ try:
     )
 except ImportError as e:
     print(f"Error importing AstroPT components: {e}")
-    print("Error importing AstroPT. Make sure external/astroPT/src is in PYTHONPATH.")
     sys.exit(1)
 
 
@@ -53,7 +50,6 @@ def parse_args_and_config() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Export astroPT embeddings for Euclid+DESI.")
     p.add_argument("--config", type=str, default=None, help="Path to YAML configuration file.")
     
-    # Set defaults to None to detect presence
     p.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
     p.add_argument("--split", type=str, default=None, help="Dataset split to process.")
     p.add_argument("--cache-dir", type=str, default=None, help="Path to dataset cache.")
@@ -63,16 +59,16 @@ def parse_args_and_config() -> argparse.Namespace:
     p.add_argument("--num-workers", type=int, default=None, help="Number of dataloader workers.")
     p.add_argument("--reduction", choices=["mean", "exp_decay", "last", "none"], default=None, help="Embedding reduction method.")
     p.add_argument("--device", type=str, default=None, help="Compute device (cuda/cpu).")
+    p.add_argument("--verbose", action="store_true", default=None, help="Enable verbose logging.")
+    p.add_argument("--max-samples", type=int, default=None, help="Maximum samples to process.")
     
     args = p.parse_args()
     
-    # 1. Load config
     cfg = {}
     if args.config:
          with open(args.config, 'r') as f:
             cfg = yaml.safe_load(f) or {}
 
-    # 2. Get Value Helper
     def get_val(arg_name, default, config_key=None):
         cli_val = getattr(args, arg_name)
         if cli_val is not None:
@@ -82,27 +78,32 @@ def parse_args_and_config() -> argparse.Namespace:
              return cfg[key]
         return default
 
-    # 3. Resolve
     # Checkpoint Smart Recovery
     checkpoint_str = get_val("checkpoint", None)
-    
     if checkpoint_str:
         final_ckpt = Path(checkpoint_str)
     else:
-        # Smart Recovery
-        if def_ckpt.exists():
-            print(f"[Auto-Recovery] Found retrained weights: {def_ckpt}")
-            final_ckpt = def_ckpt
-        else:
-            # Fallback to failing if not found
+        candidates = [
+            paths.retrained_weights / "models" / "astropt" / "ckpt_final.pt",
+            paths.retrained_weights / "astropt" / "ckpt_final.pt",
+            paths.retrained_weights / "astropt" / "ckpt.pt",
+        ]
+        final_ckpt = None
+        for cand in candidates:
+            if cand.exists():
+                print(f"[Auto-Recovery] Found retrained weights: {cand}")
+                final_ckpt = cand
+                break
+        if not final_ckpt:
             final_ckpt = def_ckpt 
 
-    # Construct clean Namespace object
     args.checkpoint = str(final_ckpt)
     args.split = get_val("split", "all")
     args.cache_dir = get_val("cache_dir", str(def_cache))
     args.output_dir = get_val("output_dir", str(def_out))
     args.output_name = get_val("output_name", "astropt_embeddings.pt")
+    args.max_samples = get_val("max_samples", None)
+    args.verbose = get_val("verbose", False)
     args.batch_size = int(get_val("batch_size", 16))
     args.num_workers = int(get_val("num_workers", 2))
     args.reduction = get_val("reduction", "mean")
@@ -112,9 +113,7 @@ def parse_args_and_config() -> argparse.Namespace:
 
 
 def create_modality_registry(config) -> ModalityRegistry:
-    # Check if config is object or dict
     def get(k): return getattr(config, k) if hasattr(config, k) else config[k]
-    
     modalities = [
         ModalityConfig(
             name="images",
@@ -136,38 +135,22 @@ def create_modality_registry(config) -> ModalityRegistry:
     return ModalityRegistry(modalities)
 
 def load_model(checkpoint_path: Path, device: torch.device):
-    # Force weights_only=False to support safe globals in older checkpoints or custom classes
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    
     config_dict = ckpt["config"]
-    
-    # Create simple config object
     class SimpleConfig:
         def __init__(self, **entries): self.__dict__.update(entries)
-    
     train_cfg = SimpleConfig(**config_dict)
     modality_registry = create_modality_registry(train_cfg)
-
-    # Rebuild model
     gpt_conf = GPTConfig(attn_type="causal", **ckpt["model_args"])
     model = GPT(gpt_conf, modality_registry)
-    
-    msg = model.load_state_dict(ckpt["model"], strict=False)
-    if msg.missing_keys or msg.unexpected_keys:
-        print(f"Model weights loaded with info: {msg}")
-    else:
-        print("Model weights loaded successfully.")
-
+    model.load_state_dict(ckpt["model"], strict=False)
     model.to(device)
     model.eval()
     return model, modality_registry, train_cfg
 
 
 def main() -> None:
-    # Suppress warnings
     warnings.filterwarnings("ignore", message="xFormers is not available")
-    warnings.filterwarnings("ignore", message=".*instance of `nn.Module` and is already saved.*")
-
     args = parse_args_and_config()
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     ckpt_path = Path(args.checkpoint)
@@ -176,22 +159,21 @@ def main() -> None:
     print(f"Using checkpoint: {ckpt_path}")
     
     if not ckpt_path.is_file():
-        # Clean error message
         print(f"Error: Checkpoint not found at {ckpt_path}")
         sys.exit(1)
 
     print(f"Loading model from {ckpt_path}...")
     model, modality_registry, train_cfg = load_model(ckpt_path, device)
 
-    # Use FMBDataConfig
     data_config = FMBDataConfig(
         split=args.split,
         cache_dir=args.cache_dir,
         image_size=train_cfg.image_size,
-        spectrum_length=train_cfg.spectrum_length
+        spectrum_length=train_cfg.spectrum_length,
+        max_entries=args.max_samples,
     )
-    print(f"Loading dataset from {args.cache_dir} (split={args.split})...")
-    dataset = AstroPTDataset(data_config)
+    print(f"Loading dataset split={args.split}...")
+    dataset = AstroPTDataset(data_config, verbose=args.verbose)
     
     loader = DataLoader(
         dataset,
@@ -203,8 +185,7 @@ def main() -> None:
     )
     
     print(f"Starting inference on {len(dataset)} samples...")
-
-    records: Dict[str, Dict] = {}
+    records = []
     progress = tqdm(loader, desc="Encoding", unit="batch")
 
     with torch.inference_mode():
@@ -220,32 +201,53 @@ def main() -> None:
                 continue
 
             embeds = model.generate_embeddings(inputs, reduction=args.reduction)
-
-            if "images" in embeds and "image_object_ids" in batch:
-                ids: List = batch["image_object_ids"]
-                redshifts = batch.get("image_redshifts", [])
-                for i, obj_id in enumerate(ids):
-                    rec = records.setdefault(str(obj_id), {"object_id": obj_id})
-                    if i < len(redshifts):
-                        rec["redshift"] = float(redshifts[i])
-                    rec["embedding_images"] = embeds["images"][i].detach().cpu()
-
-            if "spectra" in embeds and "spectrum_object_ids" in batch:
-                ids_spec: List = batch["spectrum_object_ids"]
-                redshifts_spec = batch.get("spectrum_redshifts", [])
-                for i, obj_id in enumerate(ids_spec):
-                    rec = records.setdefault(str(obj_id), {"object_id": obj_id})
-                    if i < len(redshifts_spec):
-                        rec["redshift"] = float(redshifts_spec[i])
-                    rec["embedding_spectra"] = embeds["spectra"][i].detach().cpu()
+            img_ids = batch.get("image_object_ids", [])
+            spec_ids = batch.get("spectrum_object_ids", [])
+            img_redshifts = batch.get("image_redshifts", [])
+            spec_redshifts = batch.get("spectrum_redshifts", [])
+            
+            img_emb = embeds.get("images")
+            spec_emb = embeds.get("spectra")
+            
+            batch_size = len(img_ids) if img_ids else len(spec_ids)
+            
+            for i in range(batch_size):
+                obj_id = img_ids[i] if i < len(img_ids) else (spec_ids[i] if i < len(spec_ids) else None)
+                redshift = img_redshifts[i] if i < len(img_redshifts) else (spec_redshifts[i] if i < len(spec_redshifts) else None)
+                
+                record = {
+                    "object_id": obj_id,
+                    "targetid": obj_id,
+                    "redshift": float(redshift) if redshift is not None else None,
+                }
+                
+                emb_i = None
+                if img_emb is not None and i < len(img_emb):
+                    emb_i = img_emb[i].detach().cpu()
+                    record["embedding_images"] = emb_i
+                
+                emb_s = None
+                if spec_emb is not None and i < len(spec_emb):
+                    emb_s = spec_emb[i].detach().cpu()
+                    record["embedding_spectra"] = emb_s
+                    
+                if emb_i is not None and emb_s is not None:
+                    import torch.nn.functional as F
+                    joint = F.normalize(F.normalize(emb_i, dim=0) + F.normalize(emb_s, dim=0), dim=0)
+                    record["embedding_joint"] = joint
+                elif emb_i is not None:
+                    record["embedding_joint"] = emb_i
+                elif emb_s is not None:
+                    record["embedding_joint"] = emb_s
+                    
+                records.append(record)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     out_path = output_dir / args.output_name
     
-    print(f"Saving {len(records)} embedding records to {out_path}...")
-    torch.save(list(records.values()), out_path)
-
+    print(f"Saving {len(records)} records to {out_path}...")
+    torch.save(records, out_path)
     print("Done!")
 
 
