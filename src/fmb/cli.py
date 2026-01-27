@@ -4,10 +4,25 @@ import subprocess
 import os
 import sys
 from pathlib import Path
+
+# --- Path setup for external dependencies ---
+repo_root = Path(__file__).resolve().parents[2]
+external_paths = [
+    repo_root / "external" / "AION",
+    repo_root / "external" / "astroPT" / "src",
+    repo_root / "external" / "AstroCLIP",
+]
+
+for p in external_paths:
+    if p.exists() and str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+# --------------------------------------------
+
 from typing import Optional, List
 import yaml
 
 from fmb.paths import load_paths
+
 
 app = typer.Typer(
     help="FMB: Foundation Models Benchmark CLI - Refactored Pipeline",
@@ -74,23 +89,34 @@ def retrain(
     
     run_task()
 
-@app.command()
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def embed(
     ctx: typer.Context,
     model: str = typer.Argument(..., help="Model to use for embeddings (aion, astropt, astroclip)"),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to model-specific configuration YAML"),
     slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
 ):
     """Stage 02: Generate embeddings from foundation models."""
+    # Combine --config with extra args
+    extra_args = list(ctx.args)
+    if config:
+        extra_args.extend(["--config", config])
+
     if slurm:
-        run_slurm(f"02_embeddings/{model}.sbatch", f"embedding {model}", ctx.args)
+        run_slurm(f"02_embeddings/{model}.sbatch", f"embedding {model}", extra_args)
         return
 
-    typer.echo(f"🧠 Generating embeddings for {model} locally...")
-    forward_args(ctx)
+    typer.echo(f"Generating embeddings for {model} locally...")
+    
+    # Update sys.argv to pass extra args to the script
+    # We keep the script name (argv[0]) and append our processed args
+    import sys
+    sys.argv = [sys.argv[0]] + extra_args
 
     if model == "aion":
-        from fmb.embeddings.generate_embeddings import main as run_task
+        from fmb.embeddings.generate_embeddings_aion import main as run_task
     elif model == "astropt":
+        # ... (Already imported above in original file? No, it was in the block)
         from fmb.embeddings.generate_embeddings_astropt import main as run_task
     elif model == "astroclip":
         from fmb.embeddings.generate_embeddings_astroclip import main as run_task
@@ -99,6 +125,7 @@ def embed(
         raise typer.Exit(1)
     
     run_task()
+
 
 @app.command()
 def detect(
@@ -193,11 +220,11 @@ def paths(
     elif runs:
         typer.echo(P.runs_root)
     else:
-        typer.echo(f"📍 DATA_ROOT:   {P.dataset}")
-        typer.echo(f"📍 EMB_ROOT:    {P.embeddings}")
-        typer.echo(f"📍 CKPT_ROOT:   {P.base_weights}")
-        typer.echo(f"📍 RUNS_ROOT:   {P.runs_root}")
-        typer.echo(f"📍 CACHE_ROOT:  {P.cache}")
+        typer.echo(f"DATA_ROOT:   {P.dataset}")
+        typer.echo(f"EMB_ROOT:    {P.embeddings}")
+        typer.echo(f"CKPT_ROOT:   {P.base_weights}")
+        typer.echo(f"RUNS_ROOT:   {P.runs_root}")
+        typer.echo(f"CACHE_ROOT:  {P.cache}")
 
 if __name__ == "__main__":
     app()

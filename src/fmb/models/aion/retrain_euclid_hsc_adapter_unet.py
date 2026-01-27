@@ -278,7 +278,9 @@ def main() -> None:
     torch.save({
         "euclid_to_hsc": euclid_to_hsc.state_dict(),
         "hsc_to_euclid": hsc_to_euclid.state_dict(),
+        "args": vars(args),
     }, out_dir / "adapters_final.pt")
+
 
     # Plot sample results
     def save_sample_grid():
