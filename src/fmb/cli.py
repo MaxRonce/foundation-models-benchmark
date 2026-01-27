@@ -127,31 +127,58 @@ def embed(
     run_task()
 
 
-@app.command()
-def detect(
+
+# --- Detect Commands ---
+detect_app = typer.Typer(help="Stage 03: Detect anomalies using embeddings.")
+app.add_typer(detect_app, name="detect")
+
+@detect_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def outliers(
     ctx: typer.Context,
-    method: str = typer.Argument(..., help="Detection method (cosine, nfs, iforest)"),
-    slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
+    method: str = typer.Option("nfs", "--method", help="Method to use: 'nfs' (Normalizing Flows)"),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to config YAML"),
+    slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job")
 ):
-    """Stage 03: Detect anomalies using embeddings."""
+    """
+    Run Normalizing Flow-based outlier detection.
+    Wrapper around fmb.detection.run.
+    """
     if slurm:
-        run_slurm(f"03_detection/{method}.sbatch", f"detection {method}", ctx.args)
-        return
+        # We might need a specific sbatch file for this new command
+        # For now, let's assume we use the generic one or a new one
+        typer.echo("Slurm submission for 'detect outliers' not yet fully configured with new script. Running locally.")
+        # run_slurm(f"03_detection/nfs.sbatch", "detect outliers", ctx.args)
+        # return
 
-    typer.echo(f"🔍 Running anomaly detection ({method}) locally...")
-    forward_args(ctx)
-
-    if method == "cosine":
-        from fmb.detection.detect_cosine_anomalies import main as run_task
-    elif method == "nfs":
-        from fmb.detection.detect_outliers_NFs import main as run_task
-    elif method == "iforest":
-        from fmb.detection.detect_outliers import main as run_task
-    else:
-        typer.echo(f"❌ Unknown method: {method}")
-        raise typer.Exit(1)
+    typer.echo(f"🔍 Running outlier detection ({method}) locally...")
     
-    run_task()
+    # Forward args to the new run script
+    # We construct the argv manually to map options
+    from fmb.detection import run
+    
+    # Extract known options from context if passed, or just forward everything
+    # But Typer consumes config/method. We need to pass them to argparse if they are needed.
+    # The run.py uses argparse.
+    
+    # Reconstruct argv for argparse
+    run_args = []
+    if config:
+        run_args.extend(["--config", config])
+    
+    # Pass through other arguments (like --aion-embeddings)
+    run_args.extend(ctx.args)
+    
+    run.main(run_args)
+
+
+# Legacy Detect (Commented out to replace with Group)
+# @app.command()
+# def detect(
+#     ctx: typer.Context,
+#     method: str = typer.Argument(..., help="Detection method (cosine, nfs, iforest)"),
+#     slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
+# ):
+#     ...
 
 @app.command()
 def analyze(

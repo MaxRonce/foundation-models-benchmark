@@ -107,6 +107,14 @@ def standardize_tensor(tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor
 def apply_pca(tensor: torch.Tensor, n_components: int) -> tuple[torch.Tensor, object]:
     """Reduce dimensions using PCA."""
     from sklearn.decomposition import PCA
+    
+    n_samples, n_features = tensor.shape
+    max_components = min(n_samples, n_features)
+    
+    if n_components > max_components:
+        print(f"      [PCA] Reducing n_components from {n_components} to {max_components} (min(samples, features))")
+        n_components = max_components
+        
     print(f"      [PCA] Fitting PCA with n_components={n_components} on shape {tensor.shape}...")
     data_np = tensor.cpu().numpy()
     pca = PCA(n_components=n_components)

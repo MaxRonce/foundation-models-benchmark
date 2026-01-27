@@ -1,0 +1,24 @@
+# Outlier Detection Configuration
+
+# Flow Architecture
+# Options: 'coupling' (RealNVP) or 'autoregressive' (Masked Autoregressive Flow)
+flow_type: "autoregressive" 
+
+# Model Hyperparameters
+num_transforms: 4          # Number of flow layers/transforms
+hidden_features: 16       # Hidden dimension size in the flow's internal networks
+pca_components: 100          # Number of PCA components to keep (0 = disable PCA, use full dim)
+
+# Training Hyperparameters
+epochs: 5
+batch_size: 24
+lr: 1.0e-4                 # Learning rate
+grad_clip: 5.0             # Gradient clipping norm (0 to disable)
+weight_decay: 1.0e-5       # Weight decay (L2 regularization)
+random_seed: 42
+device: "cuda"             # "cuda" or "cpu"
+log_every: 25              # Log training progress every N epochs
+
+# Preprocessing
+clip_sigma: 8.0            # Clip values > N*sigma to improve stability
+standardize: true          # Standardize features (mean=0, std=1) before training
