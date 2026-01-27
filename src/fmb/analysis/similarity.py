@@ -12,79 +12,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from fmb.paths import load_paths
-from fmb.data.utils import read_object_ids, collect_samples, collect_samples_with_index, load_index
+from fmb.data.utils import (
+    read_object_ids, 
+    collect_samples, 
+    collect_samples_with_index, 
+    load_index,
+    load_embeddings_file,
+    extract_embedding_matrices
+)
 from fmb.viz.similarity import plot_vertical_panels
 from fmb.data.load_display_data import EuclidDESIDataset
-
-def load_embeddings_file(path: Path) -> List[Dict]:
-    """Load raw embeddings list of dicts."""
-    print(f"Loading embeddings from {path}...")
-    data = torch.load(path, map_location="cpu")
-    if isinstance(data, list): return data
-    if isinstance(data, dict): return [data]
-    raise ValueError(f"Unknown format in {path}")
-
-def extract_embedding_matrices(records: List[Dict]) -> Tuple[Dict[str, torch.Tensor], List[str]]:
-    """
-    Extract tensors for all available modalities.
-    Returns map {modality_key: Tensor(N, D)} and list of object_ids.
-    """
-    if not records:
-        return {}, []
-    
-    sample = records[0]
-    keys = []
-    
-    # Heuristics
-    if "embedding_images" in sample and "embedding_spectra" in sample:
-        # AstroPT/Clip style
-        keys = ["embedding_images", "embedding_spectra"]
-        # Create joint on fly if needed? Assuming simplest first.
-    elif "embedding_hsc" in sample:
-        # AION style
-        keys = ["embedding_hsc", "embedding_spectrum"]
-        if "embedding_hsc_desi" in sample:
-            keys.append("embedding_hsc_desi")
-            
-    # Fallback
-    if not keys:
-         keys = [k for k in sample.keys() if k.startswith("embedding_")]
-
-    print(f"  Detected modalities: {keys}")
-    
-    vectors_map = {k: [] for k in keys}
-    # Add joint computed if missing?
-    # For now keep simple: what is in file.
-    
-    oids = []
-    for r in records:
-        oid = str(r.get("object_id") or r.get("targetid", ""))
-        if not oid: continue
-        
-        # Must have all keys?
-        current = {}
-        valid = True
-        for k in keys:
-            v = r.get(k)
-            if v is None: 
-                valid = False; break
-            if not isinstance(v, torch.Tensor):
-                v = torch.tensor(v)
-            current[k] = v.flatten().float()
-            
-        if valid:
-            oids.append(oid)
-            for k in keys:
-                vectors_map[k].append(current[k])
-                
-    # Stack and Normalize
-    matrices = {}
-    for k, vlist in vectors_map.items():
-        mat = torch.stack(vlist)
-        mat = F.normalize(mat, p=2, dim=1)
-        matrices[k] = mat
-        
-    return matrices, oids
 
 def find_nearest_neighbors(
     query_ids: List[str], 

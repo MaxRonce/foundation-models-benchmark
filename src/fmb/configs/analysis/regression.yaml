@@ -1,0 +1,30 @@
+# Regression Analysis Configuration
+
+# Target parameters to predict
+targets:
+  - redshift
+  - mass
+  - sfr
+
+# Column implementation details (maps friendly name to catalog column)
+column_mapping:
+  redshift: Z
+  mass: LOGM
+  sfr: LOGSFR
+
+# Catalog Configuration
+catalog_id_column: TARGETID
+# If not specified, will try to auto-detect ID
+
+# Model settings
+seed: 42
+test_size: 0.2
+n_bootstraps: 50
+run_shap: true
+
+# Models to include in analysis
+models:
+  - AION
+  - AstroPT
+  - AstroCLIP
+#  - Random  # Optional baseline

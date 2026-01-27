@@ -496,6 +496,27 @@ def neighbor_ranks(
         output_dir=out_path
     )
 
+@analyze_app.command()
+def regression(
+    ctx: typer.Context,
+    config: Optional[str] = typer.Option(None, "--config", help="Path to regression config.yaml"),
+    out_dir: Optional[str] = typer.Option(None, "--out-dir", help="Output directory"),
+):
+    """
+    Run physical parameter regression analysis.
+    Predicts Redshift, Mass, SFR from embeddings.
+    """
+    from fmb.analysis.regression import predict_physical_params
+    from pathlib import Path
+    
+    cfg_path = Path(config) if config else None
+    out_path = Path(out_dir) if out_dir else None
+    
+    predict_physical_params.run_analysis(
+        config_path=cfg_path,
+        output_dir=out_path
+    )
+
 @app.command()
 def display(
     ctx: typer.Context,

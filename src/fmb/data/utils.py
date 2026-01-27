@@ -4,7 +4,7 @@ Helpers for reading object IDs and collecting samples from the dataset.
 """
 import csv
 from pathlib import Path
-from typing import List, Dict, Optional, Sequence
+from typing import List, Dict, Optional, Sequence, Tuple
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -135,4 +135,87 @@ def prepare_rgb_image(sample: Dict) -> np.ndarray:
     img_np = img_t.permute(1, 2, 0).cpu().numpy()
     # Clip 0..1
     img_np = np.clip(img_np, 0, 1)
-    return img_np
+    return image
+
+# --- Embedding Loading Utilities ---
+
+def load_embeddings_file(path: Path) -> List[Dict]:
+    """Load raw embeddings list of dicts."""
+    print(f"Loading embeddings from {path}...")
+    try:
+        data = torch.load(path, map_location="cpu", weights_only=False)
+        if isinstance(data, list): return data
+        if isinstance(data, dict): return [data]
+        raise ValueError(f"Unknown format in {path}")
+    except Exception as e:
+        print(f"Error loading {path}: {e}")
+        return []
+
+def extract_embedding_matrices(records: List[Dict]) -> Tuple[Dict[str, torch.Tensor], List[str]]:
+    """
+    Extract tensors for all available modalities.
+    Returns map {modality_key: Tensor(N, D)} and list of object_ids.
+    """
+    import torch.nn.functional as F
+    
+    if not records:
+        return {}, []
+    
+    sample = records[0]
+    keys = []
+    
+    # Heuristics for modality keys
+    if "embedding_images" in sample and "embedding_spectra" in sample:
+        # AstroPT/Clip style
+        keys = ["embedding_images", "embedding_spectra", "embedding_joint"]
+    elif "embedding_hsc" in sample:
+        # AION style
+        keys = ["embedding_hsc", "embedding_spectrum"]
+        if "embedding_hsc_desi" in sample:
+            keys.append("embedding_hsc_desi")
+            
+    # Fallback/Filtering (only keys present in sample)
+    final_keys = []
+    # If explicit keys derived, verify them
+    if keys:
+         final_keys = [k for k in keys if k in sample]
+    else:
+         final_keys = [k for k in sample.keys() if k.startswith("embedding_")]
+         
+    # Ensure joint calculation if missing but components exist?
+    # For AstroCLIP/PT, usually 'embedding_joint' is saved.
+    # If not, existing scripts handled it specifically. 
+    # For generic loader, we keep it simple: return what is there.
+    
+    print(f"  Detected modalities: {final_keys}")
+    
+    vectors_map = {k: [] for k in final_keys}
+    oids = []
+    
+    for r in records:
+        oid = str(r.get("object_id") or r.get("targetid", ""))
+        if not oid: continue
+        
+        current = {}
+        valid = True
+        for k in final_keys:
+            v = r.get(k)
+            if v is None: 
+                valid = False; break
+            if not isinstance(v, torch.Tensor):
+                v = torch.tensor(v)
+            current[k] = v.flatten().float()
+            
+        if valid:
+            oids.append(oid)
+            for k in final_keys:
+                vectors_map[k].append(current[k])
+                
+    # Stack and Normalize
+    matrices = {}
+    for k, vlist in vectors_map.items():
+        mat = torch.stack(vlist)
+        mat = F.normalize(mat, p=2, dim=1)
+        matrices[k] = mat
+        
+    return matrices, oids
