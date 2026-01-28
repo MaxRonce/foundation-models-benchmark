@@ -5,9 +5,11 @@ Module: fmb.viz.style
 Description: Centralized visualization styling
 """
 
-from typing import Optional
 from pathlib import Path
+from typing import Optional
+
 from .utils import load_viz_style
+
 
 def apply_style(config_path: Optional[Path] = None):
     """
@@ -15,6 +17,7 @@ def apply_style(config_path: Optional[Path] = None):
     Delegates to utils.load_viz_style which loads from standard config location.
     """
     load_viz_style()
+
 
 # Alias for backward compatibility or preference
 set_style = apply_style

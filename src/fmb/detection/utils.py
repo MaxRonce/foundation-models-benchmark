@@ -8,11 +8,10 @@ Description: Detection utilities and helpers
 import csv
 import random
 from pathlib import Path
-from typing import Sequence, Dict, Tuple, List, Optional, Iterable, Union
+from typing import Iterable, Sequence
 
 import numpy as np
 import torch
-from torch.utils.data import TensorDataset, DataLoader
 
 # Default keys per model type
 KEYS_AION = ["embedding_hsc_desi", "embedding_hsc", "embedding_spectrum"]
@@ -39,26 +38,28 @@ def load_records(path: Path) -> list[dict]:
     raise ValueError(f"Unsupported embeddings format: {type(data)}")
 
 
-def extract_embeddings(records: Sequence[dict], key: str) -> tuple[np.ndarray, list[str]]:
+def extract_embeddings(
+    records: Sequence[dict], key: str
+) -> tuple[np.ndarray, list[str]]:
     """Extract vectors and object_ids for a specific key."""
     vectors: list[np.ndarray] = []
     object_ids: list[str] = []
-    
+
     found_any = False
     for rec in records:
         tensor = rec.get(key)
         if tensor is None:
             continue
         found_any = True
-        
+
         if isinstance(tensor, torch.Tensor):
             array = tensor.detach().cpu().numpy().copy()
         else:
             array = np.asarray(tensor).copy()
-        
+
         if array.ndim > 1:
             array = array.flatten()
-            
+
         vectors.append(array)
         object_id = rec.get("object_id", "")
         object_ids.append(str(object_id))
@@ -78,13 +79,13 @@ def filter_nonfinite_rows(
     mask = torch.isfinite(tensor).all(dim=1)
     if mask.all():
         return tensor, list(object_ids)
-    
+
     filtered_tensor = tensor[mask]
     filtered_ids = [obj for obj, keep in zip(object_ids, mask.tolist()) if keep]
     dropped = len(object_ids) - len(filtered_ids)
     if dropped > 0:
         print(f"[warn] dropped {dropped} rows containing NaN/inf values")
-        
+
     return filtered_tensor, filtered_ids
 
 
@@ -99,7 +100,9 @@ def clip_embeddings_by_sigma(tensor: torch.Tensor, sigma: float) -> torch.Tensor
     return torch.clamp(tensor, min=lower, max=upper)
 
 
-def standardize_tensor(tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def standardize_tensor(
+    tensor: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Standardize (z-score) the tensor."""
     mean = tensor.mean(dim=0, keepdim=True)
     std = tensor.std(dim=0, keepdim=True).clamp_min(1e-6)
@@ -110,22 +113,26 @@ def standardize_tensor(tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor
 def apply_pca(tensor: torch.Tensor, n_components: int) -> tuple[torch.Tensor, object]:
     """Reduce dimensions using PCA."""
     from sklearn.decomposition import PCA
-    
+
     n_samples, n_features = tensor.shape
     max_components = min(n_samples, n_features)
-    
+
     if n_components > max_components:
-        print(f"      [PCA] Reducing n_components from {n_components} to {max_components} (min(samples, features))")
+        print(
+            f"      [PCA] Reducing n_components from {n_components} to {max_components} (min(samples, features))"
+        )
         n_components = max_components
-        
-    print(f"      [PCA] Fitting PCA with n_components={n_components} on shape {tensor.shape}...")
+
+    print(
+        f"      [PCA] Fitting PCA with n_components={n_components} on shape {tensor.shape}..."
+    )
     data_np = tensor.cpu().numpy()
     pca = PCA(n_components=n_components)
     transformed_np = pca.fit_transform(data_np)
-    
+
     explained = pca.explained_variance_ratio_.sum()
     print(f"      [PCA] Explained variance: {explained:.4f}")
-    
+
     return torch.from_numpy(transformed_np).float(), pca
 
 
@@ -149,7 +156,7 @@ def collate_rows(
     order = np.argsort(-sigma_scores)
     ranks = np.empty_like(order)
     ranks[order] = np.arange(1, len(order) + 1)
-    
+
     rows: list[dict] = []
     for idx, object_id in enumerate(object_ids):
         rows.append(
@@ -169,7 +176,14 @@ def save_scores_csv(path: Path, rows: Iterable[dict]) -> None:
     """Save results to CSV."""
     if not rows:
         return
-    fieldnames = ["object_id", "embedding_key", "log_prob", "neg_log_prob", "anomaly_sigma", "rank"]
+    fieldnames = [
+        "object_id",
+        "embedding_key",
+        "log_prob",
+        "neg_log_prob",
+        "anomaly_sigma",
+        "rank",
+    ]
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)

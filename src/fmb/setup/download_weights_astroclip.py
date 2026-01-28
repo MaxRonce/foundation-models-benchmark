@@ -20,6 +20,7 @@ if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
 from huggingface_hub import hf_hub_download
+
 from fmb.paths import load_paths
 
 # Weights to download: (repo_id, filename)
@@ -29,11 +30,12 @@ ASTROCLIP_WEIGHTS = [
     ("polymathic-ai/astroclip", "astroclip.ckpt"),
 ]
 
+
 def download_astroclip_weights(dest_dir: Path) -> None:
     """Download the 3 required AstroCLIP checkpoints."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     print(f"Downloading AstroCLIP weights to {dest_dir}...")
-    
+
     for repo_id, filename in ASTROCLIP_WEIGHTS:
         print(f"  Downloading {filename} from {repo_id}...")
         hf_hub_download(
@@ -43,6 +45,7 @@ def download_astroclip_weights(dest_dir: Path) -> None:
             local_dir_use_symlinks=False,
         )
     print("AstroCLIP weights download complete.")
+
 
 def main() -> None:
     paths = load_paths()
@@ -54,8 +57,9 @@ def main() -> None:
         help="Destination directory for the checkpoints.",
     )
     args = parser.parse_args()
-    
+
     download_astroclip_weights(args.dest)
+
 
 if __name__ == "__main__":
     main()

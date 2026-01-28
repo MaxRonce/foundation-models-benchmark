@@ -12,15 +12,16 @@ from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 
 try:
     import umap
 except ImportError as exc:  # pragma: no cover
-    raise SystemExit("The 'umap-learn' package is required. Install it with 'pip install umap-learn'.") from exc
+    raise SystemExit(
+        "The 'umap-learn' package is required. Install it with 'pip install umap-learn'."
+    ) from exc
 
-from .detect_outliers import EMBEDDING_KEYS, load_records, stack_embeddings  # type: ignore[import]
-
+from .detect_outliers import EMBEDDING_KEYS  # type: ignore[import]
+from .detect_outliers import load_records, stack_embeddings
 
 METRICS: list[tuple[str, str, str]] = [
     ("log_prob", "Log Probability", "viridis"),
@@ -33,10 +34,19 @@ def parse_scores_csv(path: Path) -> dict[str, dict[str, dict[str, float]]]:
     by_key: dict[str, dict[str, dict[str, float]]] = {}
     with path.open("r", newline="") as csvfile:
         reader = csv.DictReader(csvfile)
-        required = {"object_id", "embedding_key", "log_prob", "neg_log_prob", "anomaly_sigma", "rank"}
+        required = {
+            "object_id",
+            "embedding_key",
+            "log_prob",
+            "neg_log_prob",
+            "anomaly_sigma",
+            "rank",
+        }
         missing_cols = required - set(reader.fieldnames or [])
         if missing_cols:
-            raise SystemExit(f"Scores CSV is missing required columns: {sorted(missing_cols)}")
+            raise SystemExit(
+                f"Scores CSV is missing required columns: {sorted(missing_cols)}"
+            )
         for row in reader:
             key = row["embedding_key"]
             object_id = row["object_id"]
@@ -85,7 +95,9 @@ def plot_metric_umap(
     output_path: Path,
 ) -> None:
     fig, ax = plt.subplots(figsize=(7, 6))
-    sc = ax.scatter(coords[:, 0], coords[:, 1], c=values, cmap=cmap, s=12, linewidths=0, alpha=0.9)
+    sc = ax.scatter(
+        coords[:, 0], coords[:, 1], c=values, cmap=cmap, s=12, linewidths=0, alpha=0.9
+    )
     ax.set_title(f"{embedding_key.replace('embedding_', '').upper()} – {metric_label}")
     ax.set_xlabel("UMAP-1")
     ax.set_ylabel("UMAP-2")
@@ -102,18 +114,35 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Plot UMAP projections of embeddings coloured by flow-based anomaly scores.",
     )
-    parser.add_argument("--embeddings", required=True, help="Path to embeddings .pt file")
-    parser.add_argument("--scores-csv", required=True, help="CSV produced by scratch.detect_outliers_NFs")
-    parser.add_argument("--output-dir", required=True, help="Directory to store generated figures")
+    parser.add_argument(
+        "--embeddings", required=True, help="Path to embeddings .pt file"
+    )
+    parser.add_argument(
+        "--scores-csv",
+        required=True,
+        help="CSV produced by scratch.detect_outliers_NFs",
+    )
+    parser.add_argument(
+        "--output-dir", required=True, help="Directory to store generated figures"
+    )
     parser.add_argument(
         "--embedding-key",
         choices=EMBEDDING_KEYS,
         nargs="+",
         help="Subset of embedding keys to plot. Defaults to keys present in the CSV.",
     )
-    parser.add_argument("--n-neighbors", type=int, default=30, help="UMAP number of neighbours")
-    parser.add_argument("--min-dist", type=float, default=0.05, help="UMAP minimum distance")
-    parser.add_argument("--random-state", type=int, default=42, help="Random state for UMAP reproducibility")
+    parser.add_argument(
+        "--n-neighbors", type=int, default=30, help="UMAP number of neighbours"
+    )
+    parser.add_argument(
+        "--min-dist", type=float, default=0.05, help="UMAP minimum distance"
+    )
+    parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random state for UMAP reproducibility",
+    )
     parser.add_argument(
         "--no-standardize",
         action="store_true",

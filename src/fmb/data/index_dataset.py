@@ -8,7 +8,7 @@ Description: Indexing utilities for fast object lookups
 import argparse
 import csv
 from pathlib import Path
-from typing import Sequence, Optional, List
+from typing import List, Optional, Sequence
 
 from datasets import get_dataset_split_names, load_dataset, load_from_disk
 from tqdm import tqdm
@@ -29,13 +29,13 @@ def run_indexing(
     splits: Sequence[str] = ("all",),
     output: Optional[Path] = None,
     overwrite: bool = False,
-    hf_dataset_id: Optional[str] = None
+    hf_dataset_id: Optional[str] = None,
 ) -> None:
     """
     Main entry point for indexing the dataset.
     """
     paths = load_paths()
-    
+
     # Defaults
     if cache_dir is None:
         cache_dir = str(paths.dataset)
@@ -50,7 +50,7 @@ def run_indexing(
 
     # Determine splits
     final_splits: List[str] = []
-    
+
     # Check if "all" is requested
     if "all" in [s.lower() for s in splits]:
         # Priority to local directories in cache_dir
@@ -58,7 +58,7 @@ def run_indexing(
         for s_name, local_name in LOCAL_SPLITS.items():
             if (Path(cache_dir) / local_name).is_dir():
                 local_found.append(s_name)
-        
+
         if local_found:
             final_splits = local_found
             print(f"Found local splits: {final_splits}")
@@ -84,7 +84,7 @@ def run_indexing(
             if path.is_dir():
                 print(f"  Loading split '{split_name}' from local directory: {path}")
                 return load_from_disk(str(path))
-        
+
         print(f"  Loading split '{split_name}' from HF dataset {hf_dataset_id}")
         return load_dataset(hf_dataset_id, split=split_name, cache_dir=cache_dir)
 
@@ -100,14 +100,14 @@ def run_indexing(
             # Use 'targetid' or 'object_id'
             # Euclid dataset often uses 'object_id', older versions might use 'targetid'
             # We check first sample to be efficient? No, iterate all.
-            
+
             count = 0
             for idx, sample in enumerate(tqdm(ds, desc=f"{split}", unit="sample")):
                 oid = sample.get("object_id") or sample.get("targetid")
                 if oid is not None:
                     writer.writerow([oid, split, idx])
                     count += 1
-            
+
             print(f"  Recorded {count} entries for split '{split}'.")
 
     print(f"Index written to {output}")
@@ -118,18 +118,21 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--cache-dir", default=None, help="Dataset cache directory")
     parser.add_argument("--splits", default="all", help="Comma-separated splits")
     parser.add_argument("--output", default=None, help="Path to output CSV")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing file")
-    
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing file"
+    )
+
     args = parser.parse_args(argv)
 
     splits_list = [s.strip() for s in args.splits.split(",") if s.strip()]
-    
+
     run_indexing(
         cache_dir=args.cache_dir,
         splits=splits_list,
         output=Path(args.output) if args.output else None,
-        overwrite=args.overwrite
+        overwrite=args.overwrite,
     )
+
 
 if __name__ == "__main__":
     main()

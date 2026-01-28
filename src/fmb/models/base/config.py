@@ -16,7 +16,7 @@ from fmb.paths import load_paths
 class BaseTrainingConfig:
     """
     Base configuration for all FMB model trainers.
-    
+
     Parameters
     ----------
     out_dir : Path
@@ -44,10 +44,10 @@ class BaseTrainingConfig:
     num_workers : int
         Number of dataloader workers.
     """
-    
+
     # Paths
     out_dir: Path = load_paths().retrained_weights
-    
+
     # Training
     epochs: int = 10
     batch_size: int = 8
@@ -55,18 +55,18 @@ class BaseTrainingConfig:
     weight_decay: float = 0.1
     grad_clip: float = 1.0
     gradient_accumulation_steps: int = 1
-    
+
     # System
     device: str = "cuda"
     seed: int = 42
     amp_dtype: str = "bfloat16"
-    
+
     # Logging
     log_interval: int = 20
     checkpoint_interval: int = 1
-    
+
     # Data
     num_workers: int = 0
-    
+
     # Resume
     resume_checkpoint: Optional[str] = None

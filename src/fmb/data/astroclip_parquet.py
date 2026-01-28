@@ -13,7 +13,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -74,7 +74,9 @@ def resolve_parquet_path(raw_path: str) -> str:
             files = list_repo_files(repo_id=repo_id, repo_type="dataset")
             guesses = [f for f in files if inner_path.split("/")[-1] in f]
             hint = f" Exemples trouvés: {guesses[:5]}" if guesses else ""
-            raise FileNotFoundError(f"{inner_path} introuvable sur Hugging Face.{hint}") from exc
+            raise FileNotFoundError(
+                f"{inner_path} introuvable sur Hugging Face.{hint}"
+            ) from exc
 
     path_obj = Path(raw_path).expanduser()
     if not path_obj.exists():
@@ -164,7 +166,9 @@ class ParquetDataSource(DataSource):
         if "image" not in df.columns and "RGB_image" in df.columns:
             df["image"] = df["RGB_image"].apply(self._preprocess_image)
         elif "image" not in df.columns:
-            raise ValueError("Le parquet doit contenir une colonne 'image' ou 'RGB_image'.")
+            raise ValueError(
+                "Le parquet doit contenir une colonne 'image' ou 'RGB_image'."
+            )
 
         if "redshift" not in df.columns:
             raise ValueError("La colonne 'redshift' est absente du parquet.")
@@ -175,7 +179,11 @@ class ParquetDataSource(DataSource):
             if self.focus_high_z:
                 df = df.nlargest(self.sample_size, "redshift").reset_index(drop=True)
             else:
-                df = df.sample(self.sample_size, random_state=42).sort_index().reset_index(drop=True)
+                df = (
+                    df.sample(self.sample_size, random_state=42)
+                    .sort_index()
+                    .reset_index(drop=True)
+                )
 
         df["pair_id"] = np.arange(len(df))
         return df

@@ -16,7 +16,7 @@ from fmb.paths import load_paths
 class AstroCLIPTrainingConfig(BaseTrainingConfig):
     """
     Configuration for AstroCLIP fine-tuning.
-    
+
     Parameters
     ----------
     checkpoint : str
@@ -54,16 +54,16 @@ class AstroCLIPTrainingConfig(BaseTrainingConfig):
     split : str
         Dataset split to use ('train', 'test').
     """
-    
+
     # Output
     out_dir: Path = load_paths().retrained_weights / "astroclip"
-    
+
     # Model
     checkpoint: str = ""  # Required
     learnable_scale: bool = False
     finetune_spectrum: bool = False
     unfreeze_backbone_blocks: int = 0
-    
+
     # Data
     cache_dir: str = str(load_paths().dataset)
     use_arrow: bool = True
@@ -75,7 +75,7 @@ class AstroCLIPTrainingConfig(BaseTrainingConfig):
     spectrum_norm: str = "none"
     include_wavelength: bool = False
     focus_high_z: bool = False
-    
+
     # Training defaults (override base)
     epochs: int = 5
     batch_size: int = 256
@@ -84,10 +84,10 @@ class AstroCLIPTrainingConfig(BaseTrainingConfig):
     grad_clip: float = 1.0
     accumulate_steps: int = 1
     amp_dtype: str = "float16"
-    
+
     # Learning rate schedule
     warmup_steps: int = 0  # 0 means auto (10% of total)
-    
+
     # Early stopping
     patience: int = 3
     min_delta: float = 1e-4

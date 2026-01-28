@@ -16,7 +16,7 @@ from fmb.paths import load_paths
 class AstroPTTrainingConfig(BaseTrainingConfig):
     """
     Configuration for AstroPT multimodal training.
-    
+
     Parameters
     ----------
     block_size : int
@@ -54,10 +54,10 @@ class AstroPTTrainingConfig(BaseTrainingConfig):
     compile : bool
         Use torch.compile for model.
     """
-    
+
     # Output
     out_dir: Path = load_paths().retrained_weights / "astropt"
-    
+
     # Model architecture
     block_size: int = 1024
     image_patch_size: int = 16
@@ -68,14 +68,14 @@ class AstroPTTrainingConfig(BaseTrainingConfig):
     n_chan: int = 3
     dropout: float = 0.0
     bias: bool = False
-    
+
     # Data
     cache_dir: str = str(load_paths().dataset)
     train_split: str = "train"
     val_split: str = "test"
     image_size: int = 224
     spectrum_length: int = 7781
-    
+
     # Training defaults (override base)
     epochs: int = 30
     batch_size: int = 8
@@ -84,16 +84,16 @@ class AstroPTTrainingConfig(BaseTrainingConfig):
     grad_clip: float = 1.0
     gradient_accumulation_steps: int = 4
     amp_dtype: str = "bfloat16"
-    
+
     # Learning rate schedule
     warmup_iters: int = 2000
     lr_decay_iters: int = 30000
     min_lr: float = 6e-5
-    
+
     # Evaluation
     eval_interval: int = 100
     eval_iters: int = 50
-    
+
     # System
     compile: bool = True
-    max_iters: int = 30000  
+    max_iters: int = 30000
