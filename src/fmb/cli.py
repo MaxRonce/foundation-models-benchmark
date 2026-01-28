@@ -31,12 +31,9 @@ app = typer.Typer(
 )
 
 def run_slurm(sbatch_file: str, name: str, extra_args: List[str]):
-    """Shorthand to submit a slurm job with optional extra args (passed to the sbatch)."""
-    # Note: forwarding extra args to sbatch is tricky; usually sbatch scripts are fixed.
-    # But for now we just submit the sbatch.
+    """Submit a SLURM job using sbatch."""
     cmd = ["sbatch", f"slurm/{sbatch_file}"]
     if extra_args:
-        # Some users might want to pass args to sbatch, but here we keep it simple.
         typer.echo(f"  Note: Extra arguments {extra_args} are NOT forwarded to sbatch automatically.")
     
     typer.echo(f" Submitting Slurm job for {name}...")
@@ -277,7 +274,7 @@ def tsne(
 
     typer.echo(f"Running t-SNE analysis locally...")
     forward_args(ctx)
-    from fmb.viz.plot_paper_tsne_comparison import main as run_task
+    from fmb.viz.tsne_comparison import main as run_task
     run_task()
 
 @analyze_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -628,7 +625,7 @@ def paper_umap(
 
     typer.echo("Generating publication combined UMAP plot locally...")
     forward_args(ctx)
-    from fmb.viz.plot_paper_combined_umap import main as run_task
+    from fmb.viz.combined_umap import main as run_task
     run_task()
 
 @viz_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -648,7 +645,7 @@ def advanced_analysis(
         return
 
     typer.echo("Running Advanced Analysis...")
-    from fmb.viz.outliers.plot_paper_advanced_analysis import run_analysis
+    from fmb.viz.outliers.advanced_analysis import run_analysis
     
     run_analysis(
         aion_scores=aion_scores,
@@ -679,7 +676,7 @@ def outlier_grid(
         return
 
     typer.echo("Generating Outlier Grid...")
-    from fmb.viz.outliers.plot_paper_outlier_grid import run_grid_plot
+    from fmb.viz.outliers.outlier_grid import run_grid_plot
     
     run_grid_plot(
         csv_paths=csv,
@@ -712,7 +709,7 @@ def single_object(
         return
 
     typer.echo(f"Plotting Object {object_id}...")
-    from fmb.viz.outliers.plot_paper_single_object import run_single_object_plot
+    from fmb.viz.outliers.single_object import run_single_object_plot
     
     run_single_object_plot(
         object_id=object_id,

@@ -135,7 +135,7 @@ def prepare_rgb_image(sample: Dict) -> np.ndarray:
     img_np = img_t.permute(1, 2, 0).cpu().numpy()
     # Clip 0..1
     img_np = np.clip(img_np, 0, 1)
-    return image
+    return img_np
 
 # --- Embedding Loading Utilities ---
 

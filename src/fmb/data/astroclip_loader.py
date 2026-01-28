@@ -84,7 +84,6 @@ def load_local_arrow_dataset(
         dataset = dataset.select(indices)
     
     # Convert to pandas DataFrame
-    # Note: HuggingFace Dataset.to_pandas() works well for most cases
     df = dataset.to_pandas()
     
     print(f"✓ Converted to DataFrame with {len(df)} rows")

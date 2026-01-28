@@ -26,8 +26,6 @@ from PIL import Image
 # from astroclip.models import AstroClipModel
 
 # Define constants locally if needed, or rely on env
-# HACKATHON_ROOT = Path(__file__).resolve().parents[2] # This was specific to original layout
-# DEFAULT_CACHE_DIR = HACKATHON_ROOT / ".cache"
 DEFAULT_CACHE_DIR = Path(os.getcwd()) / ".cache"
 CACHE_DIR = Path(os.environ.get("ASTROCLIP_CACHE_DIR", DEFAULT_CACHE_DIR))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
