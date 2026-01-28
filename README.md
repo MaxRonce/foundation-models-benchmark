@@ -1,98 +1,189 @@
 # Foundation Models Benchmark (FMB)
 
-This repository provides a standardized framework for benchmarking multimodal foundation models—including AION, astroPT, and AstroCLIP—specialized for Euclid imaging and DESI spectroscopic data.
+**Official code repository for:**
+> **Benchmarking Foundation Models for Unsupervised Discovery in Large Multimodal Astrophysical Datasets**  
 
-## System Architecture
 
-The project is structured as a modular Python package (`fmb`) designed to facilitate reproducible research through centralized path management and a unified command-line interface (CLI).
+This repository provides a scalable pipeline for benchmarking pretrained multimodal foundation models—AION, AstroPT, and AstroCLIP—for unsupervised anomaly detection in matched imaging–spectroscopy data from the Euclid and DESI astronomical surveys.
 
-```text
-.
-├── src/fmb/              # Core source code
-│   ├── models/           # Training and fine-tuning implementations
-│   ├── embeddings/       # Embedding extraction and processing
-│   ├── detection/        # Anomaly detection methodologies (Cosine similarity, Normalizing Flows)
-│   ├── analysis/         # Physical parameter estimation
-│   ├── viz/              
-│   ├── data/             # Data preprocessing pipelines
-│   ├── paths.py          
-│   └── cli.py            
-├── slurm/                
-├── configs/              
-├── external/             
-├── data/                 
-├── embeddings/           
-└── checkpoints/          
-```
+## Overview
 
-## Installation and Setup
+We introduce a modular framework for:
+- **Lightweight adaptation** of foundation models to Euclid+DESI data
+- **Embedding extraction** from three representation paradigms: autoregressive modeling (AstroPT), contrastive alignment (AstroCLIP), and predictive transformers (AION)
+- **Scalable anomaly detection** via density estimation and multimodal fusion
+- **Cross-model ranking analysis** to understand representation-relative anomaly definitions
+- **Predictive probing** to evaluate decodability and effective dimensionality
+- **Embeddings analysis and visualisation** Many visualisation tools are provided to analyse embeddings and their structure / relationships
 
-1. Clone the repository and initialize submodules:
+## Installation
+
+### Prerequisites
+- Python 3.12+
+- CUDA-capable GPU (recommended)
+- Conda or Mamba package manager
+
+### Setup
+
+1. **Clone the repository with submodules:**
    ```bash
    git clone --recursive https://github.com/MaxRonce/foundation-models-benchmark.git
    cd foundation-models-benchmark
    ```
-2. Install the package in development mode:
+
+2. **Create and activate environment:**
+   ```bash
+   conda env create -f environment.yml
+   conda activate fmb
+   ```
+   
+   Or if you don't have an `environment.yml`, create a new environment:
+   ```bash
+   conda create -n fmb python=3.12
+   conda activate fmb
+   ```
+
+3. **Install the package:**
    ```bash
    pip install -e .
    ```
 
-## Path Configuration
+4. **Configure paths:**
+   
+   Create `src/fmb/configs/paths_local.yaml` based on `paths.template.yaml`:
+   ```yaml
+   storage_root: "/path/to/your/data"
+   dataset_path: "/path/to/euclid_desi_dataset"
+   # ... (see paths.template.yaml for all options)
+   ```
 
-The framework utilizes a modular path management system. Users must define local storage roots in `configs/paths_local.py` (which is excluded from version control):
+5. **Verify installation:**
+   ```bash
+   fmb paths
+   ```
 
-```python
-# configs/paths_local.py
-DATA_ROOT = "/n03data/ronceray/datasets"
-EMB_ROOT = "/n03data/ronceray/embeddings"
-CKPT_ROOT = "/n03data/ronceray/models"
-RUNS_ROOT = "/n03data/ronceray/runs"
-CACHE_ROOT = "/n03data/ronceray/cache"
-```
+## Pipeline
 
-The current configuration can be validated using:
+The benchmark follows a structured pipeline:
+
+### Stage 0: Setup & Data Indexing
 ```bash
-python -m fmb.cli paths
+# Download pretrained weights
+python src/fmb/setup/download_weights_aion.py
+python src/fmb/setup/download_weights_astroclip.py
+
+# Check environment
+python src/fmb/setup/check_environment_aion.py
+python src/fmb/setup/check_environment_astroclip.py
+
+# Create dataset index (object_id → split/index mapping)
+fmb data index --splits all
+
+# Display sample (optional)
+fmb display --split all --show-bands --no-gui --save runs/images/test.png
 ```
 
-## Command-Line Interface
-
-The `fmb` CLI provides a unified interface for all pipeline stages, ensuring consistency across execution environments. It supports direct argument passing to the underlying research scripts.
-
-### Model Retraining and Fine-tuning
+### Stage 1: Lightweight Adaptation (Retraining)
 ```bash
-python -m fmb.cli retrain aion_codec --epochs 10 --batch-size 32
+fmb retrain aion --config configs/retrain/aion.yaml
+fmb retrain astropt --config configs/retrain/astropt.yaml
+fmb retrain astroclip --config configs/retrain/astroclip.yaml
 ```
 
-### Embedding Extraction
+### Stage 2: Embedding Extraction
 ```bash
-python -m fmb.cli embed aion --split all
+fmb embed aion --config configs/embeddings/aion.yaml
+fmb embed astropt --config configs/embeddings/astropt.yaml
+fmb embed astroclip --config configs/embeddings/astroclip.yaml
 ```
 
-### Anomaly Detection
+### Stage 3: Anomaly Detection
 ```bash
-python -m fmb.cli detect cosine --threshold-percent 1.0
+# Per-modality density estimation (Normalizing Flows)
+fmb detect outliers
+
+# Multimodal fusion and ranking
+fmb detect multimodal --top-k 200 --fusion geo
 ```
 
-### Statistical Analysis and Visualization
+### Stage 4: Analysis
 ```bash
-python -m fmb.cli analyze tsne
+# Anomaly correlation and uplift analysis
+fmb analyze outliers
+
+# Visual similarity search
+fmb analyze similarity --query <object_id>
+fmb analyze neighbor-ranks --query <object_id>
+
+# Physical parameter regression
+fmb analyze regression --config configs/analysis/regression.yaml
+
+# Embedding displacement analysis
+fmb analyze displacement
 ```
 
-## HPC Integration (Slurm)
-
-To submit a batch job:
+### Stage 5: Visualization
 ```bash
-sbatch slurm/02_embeddings/aion.sbatch
+# UMAP embeddings
+fmb viz paper-umap
+
+# Advanced analysis figures (Spearman, Jaccard, Disagreements)
+fmb viz advanced-analysis
+
+# Outlier grid visualization
+fmb viz outlier-grid --csv runs/outliers/anomaly_scores_aion.csv --cols 4
+
+# Single object detailed view
+fmb viz single-object --object-id <object_id>
 ```
 
-Alternatively, jobs can be submitted directly via the CLI:
+## Project Structure
+
+```
+.
+├── src/fmb/              # Core package
+│   ├── models/           # Model adaptation implementations
+│   ├── embeddings/       # Embedding extraction
+│   ├── detection/        # Anomaly detection (NFS, cosine, multimodal fusion)
+│   ├── analysis/         # Regression, displacement, similarity
+│   ├── viz/              # Publication-ready visualizations
+│   ├── data/             # Data loading and indexing
+│   ├── paths.py          # Centralized path management
+│   └── cli.py            # Unified CLI
+├── configs/              # YAML configurations
+├── external/             # Foundation model repositories (submodules)
+│   ├── AION/
+│   ├── astroPT/
+│   └── AstroCLIP/
+├── slurm/                # HPC job scripts
+└── tests/                # Unit tests
+```
+
+## Testing
+
+Run the test suite:
 ```bash
-python -m fmb.cli embed aion --slurm
+python -m unittest discover tests
 ```
 
-## Research Context and Acknowledgments
-This framework evolved from collaborative development during the AstroInfo 2025 hackathon.
-- **AION**: A multimodal foundation model supporting modality-specific and fused latent spaces.
-- **astroPT**: A transformer-based architecture for joint spectral and imaging encoding.
-- **AstroCLIP**: A contrastive learning framework for cross-modal alignment.
+## HPC/Slurm Integration
+
+Many commands support `--slurm` flag for cluster submission:
+```bash
+fmb retrain astropt --config configs/retrain/astropt.yaml --slurm
+fmb embed aion --slurm
+```
+
+## Acknowledgements
+
+This work builds upon the following foundation models:
+
+- **AstroPT**: [https://github.com/Smith42/astroPT](https://github.com/Smith42/astroPT) & [https://github.com/astroinfo-hacks/astroPT](https://github.com/astroinfo-hacks/astroPT)
+- **AION**: [https://github.com/PolymathicAI/AION](https://github.com/PolymathicAI/AION)
+- **AstroCLIP**: [https://github.com/PolymathicAI/AstroCLIP](https://github.com/PolymathicAI/AstroCLIP)
+
+We thank the developers of these models for making their code publicly available.
+
+## License
+
+See LICENSE file for details.

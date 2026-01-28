@@ -6,6 +6,22 @@ dependencies = [
   "typer>=0.9",
   "pyyaml>=6.0",
   "numpy",
+  "torch>=2.0",
+  "torchvision",
+  "scipy",
+  "pandas",
+  "matplotlib",
+  "seaborn",
+  "scikit-learn",
+  "datasets",
+  "huggingface_hub",
+  "transformers",
+  "timm",
+  "einops",
+  "astropy",
+  "FrEIA",
+  "umap-learn",
+  "tqdm",
 ]
 
 [project.scripts]
