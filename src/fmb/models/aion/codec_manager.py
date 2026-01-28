@@ -48,7 +48,6 @@ class LocalCodecManager(CodecManager):
                 config = self._load_config(config_path)
                 repo_ref = str(self.repo)
             else:
-                # print(f"codecs/{modality_type.name}/config.json not found in {self.repo}")
                 config_path = hf_hub_download(
                     HF_REPO_ID, f"codecs/{modality_type.name}/config.json"
                 )

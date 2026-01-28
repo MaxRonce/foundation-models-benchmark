@@ -376,12 +376,7 @@ def estimate_loss(model, train_loader, val_loader, config, modality_registry, de
                 print(f"Warning: Empty inputs for {split} batch {i}")
                 continue
             
-            # Debug: print inputs info
-            # if i == 0:  # Only for first batch
-            #     print(f"Debug {split} inputs keys: {inputs.keys()}")
-            #     for key, val in inputs.items():
-            #         if isinstance(val, torch.Tensor):
-            #             print(f"  {key}: {val.shape}, dtype: {val.dtype}")
+
             
             with ctx:
                 # Proper target preparation for autoregressive training
@@ -846,7 +841,6 @@ def main():
         )
         
         if not inputs:
-            # print(f"Warning: Empty batch at iteration {iter_num}")
             continue
             
         with ctx:

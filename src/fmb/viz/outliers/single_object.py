@@ -98,7 +98,6 @@ def plot_spectrum(ax: plt.Axes, sample: dict, smooth_sigma: float = 2.0):
     ax.set_xlabel(r"Rest-frame Wavelength [\AA]")
     ax.set_ylabel("Flux [arb.]")
     ax.set_xlim(w_rest.min(), w_rest.max())
-    # ax.set_title(f"Redshift $z={redshift:.3f}$", fontsize=10)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 

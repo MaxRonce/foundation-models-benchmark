@@ -18,13 +18,6 @@ from huggingface_hub import hf_hub_download, list_repo_files
 from huggingface_hub.utils import EntryNotFoundError
 from PIL import Image
 
-# Removed unused imports from original embeddings.py for this extraction
-# from datasets import load_dataset
-# from sklearn.decomposition import PCA
-# from torch.utils.data import DataLoader, Dataset
-# from astroclip.data.datamodule import AstroClipCollator
-# from astroclip.models import AstroClipModel
-
 # Define constants locally if needed, or rely on env
 DEFAULT_CACHE_DIR = Path(os.getcwd()) / ".cache"
 CACHE_DIR = Path(os.environ.get("ASTROCLIP_CACHE_DIR", DEFAULT_CACHE_DIR))
