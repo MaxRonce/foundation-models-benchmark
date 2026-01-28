@@ -1,10 +1,10 @@
 """
-Script to generate a publication-ready single object visualization.
-Displays a single row with:
-[Spectrum (Restframe)] [VIS band] [NISP-Y band] [NISP-J band] [NISP-H band]
+Foundation Models Benchmark (FMB)
 
-Refactored for FMB CLI Integration.
+Module: fmb.viz.outliers.single_object
+Description: FMB module: fmb.viz.outliers.single_object
 """
+
 import argparse
 import sys
 from pathlib import Path

@@ -1,7 +1,10 @@
 """
-Data Utilities for FMB.
-Helpers for reading object IDs and collecting samples from the dataset.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.data.utils
+Description: Embedding loading and image preprocessing utilities
 """
+
 import csv
 from pathlib import Path
 from typing import List, Dict, Optional, Sequence, Tuple

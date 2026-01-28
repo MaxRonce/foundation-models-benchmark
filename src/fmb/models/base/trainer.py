@@ -1,25 +1,8 @@
 """
-2026-01-23
-base/trainer.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Abstract base trainer class for all FMB models.
-Provides standardized training loop, checkpointing, and validation.
-
-Usage
------
-from fmb.models.base import BaseTrainer, BaseTrainingConfig
-
-class MyTrainer(BaseTrainer):
-    def train_step(self, batch):
-        # Implement forward pass and loss computation
-        return {"loss": loss}
-    
-    def val_step(self, batch):
-        # Implement validation step
-        return {"loss": val_loss}
+Module: fmb.models.base.trainer
+Description: Abstract trainer interface
 """
 
 from abc import ABC, abstractmethod

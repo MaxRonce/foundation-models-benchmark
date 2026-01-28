@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.cli
+Description: Command-line interface for all FMB operations
+"""
+
 from __future__ import annotations
 import typer
 import subprocess

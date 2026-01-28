@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.astroclip.core.specformer
+Description: Spectrum transformer architecture
+"""
+
 import math
 
 import lightning as L

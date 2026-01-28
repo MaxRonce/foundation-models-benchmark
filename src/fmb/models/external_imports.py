@@ -1,18 +1,8 @@
 """
-2026-01-23
-models/external_imports.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Centralized management of external library imports (AION, astroPT, AstroCLIP).
-Ensures external/ submodules are properly added to sys.path.
-
-Usage
------
-from fmb.models.external_imports import setup_external_paths
-
-setup_external_paths()  # Call once at module initialization
+Module: fmb.models.external_imports
+Description: External submodule import handler
 """
 
 import sys

@@ -2,7 +2,7 @@
 
 # Flow Architecture
 # Options: 'coupling' (RealNVP) or 'autoregressive' (Masked Autoregressive Flow)
-flow_type: "autoregressive" 
+flow_type: "coupling" 
 
 # Model Hyperparameters
 num_transforms: 4          # Number of flow layers/transforms

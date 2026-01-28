@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.astroclip.core.modules
+Description: AstroCLIP vision and spectrum encoders
+"""
+
 import math
 import numbers
 from typing import Callable, Optional, Tuple, Union

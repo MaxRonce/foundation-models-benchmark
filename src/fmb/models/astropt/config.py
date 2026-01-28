@@ -1,17 +1,8 @@
 """
-2026-01-23
-astropt/config.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Configuration dataclass for AstroPT multimodal training (images + spectra).
-
-Usage
------
-from fmb.models.astropt.config import AstroPTTrainingConfig
-
-config = AstroPTTrainingConfig(epochs=30, batch_size=16)
+Module: fmb.models.astropt.config
+Description: AstroPT model configuration
 """
 
 from dataclasses import dataclass

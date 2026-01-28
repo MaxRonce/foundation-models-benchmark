@@ -1,4 +1,9 @@
-"""High-level helpers to load data and compute AstroCLIP embeddings (hackathon edition)."""
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.data.astroclip_parquet
+Description: Parquet data source for AstroCLIP
+"""
 
 from __future__ import annotations
 

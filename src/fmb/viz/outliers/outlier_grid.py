@@ -1,9 +1,10 @@
 """
-Script to display a publication-ready grid of Euclid RGB images AND DESI spectra for a list of object IDs.
-Designed for paper figures with LaTeX styling.
+Foundation Models Benchmark (FMB)
 
-Refactored for FMB CLI Integration.
+Module: fmb.viz.outliers.outlier_grid
+Description: Grid visualization of top anomalous objects
 """
+
 import argparse
 from pathlib import Path
 from typing import Sequence, Optional, List, Union

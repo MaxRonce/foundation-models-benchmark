@@ -1,10 +1,10 @@
 """
-Script to create a CSV index of the dataset.
-It maps object IDs to their split (train/test) and index within the dataset.
-This is useful for quick lookups and ensuring consistent ordering.
+Foundation Models Benchmark (FMB)
 
-Refactored for FMB CLI Integration.
+Module: fmb.data.index_dataset
+Description: Indexing utilities for fast object lookups
 """
+
 import argparse
 import csv
 from pathlib import Path

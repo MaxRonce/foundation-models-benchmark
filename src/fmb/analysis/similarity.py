@@ -1,7 +1,10 @@
 """
-Similarity Search & Neighbor Analysis.
-Common logic for finding similar anomalies and analyzing their properties.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.analysis.similarity
+Description: Visual similarity analysis in embedding space
 """
+
 import argparse
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Sequence

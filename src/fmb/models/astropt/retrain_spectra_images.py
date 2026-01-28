@@ -1,22 +1,8 @@
-"""Training script for multimodal AstroPT using Euclid images + DESI spectra.
+"""
+Foundation Models Benchmark (FMB)
 
-This script adapts the multimodal training approach to work with the 
-Euclid+DESI HuggingFace dataset, training on both RGB images and spectra
-simultaneously.
-
-USAGE EXAMPLES:
-===============
-
-Single GPU training:
--------------------
-python models/astropt/retrain_spectra_images.py --batch-size 8 --compile
-
-Multi-GPU training (2 GPUs):
----------------------------
-torchrun --standalone --nproc_per_node=2 models/astropt/retrain_spectra_images.py \\
-    --batch-size 16 \\
-    --grad-accum 4 \\
-    --compile
+Module: fmb.models.astropt.retrain_spectra_images
+Description: AstroPT multimodal training script (DDP-compatible)
 """
 
 import argparse

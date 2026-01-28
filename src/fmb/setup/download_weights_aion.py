@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+Foundation Models Benchmark (FMB)
+
+Module: fmb.setup.download_weights_aion
+Description: FMB module: fmb.setup.download_weights_aion
+"""
+
+"""
 Script to download AION (and potentially other) model weights to the configured paths.
 Consolidates logic from camels-aion scripts.
 """

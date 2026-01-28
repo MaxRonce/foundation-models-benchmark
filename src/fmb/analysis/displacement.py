@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+Foundation Models Benchmark (FMB)
+
+Module: fmb.analysis.displacement
+Description: Embedding space displacement analysis
+"""
+
+"""
 Unified Displacement Analysis Module.
 Combines:
 1. Multi-Model Analysis (Model A vs B)

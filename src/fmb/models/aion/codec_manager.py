@@ -1,4 +1,9 @@
-"""Local-aware codec manager that supports offline operation."""
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.aion.codec_manager
+Description: Local-aware codec manager for offline operation
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.data.datasets
+Description: PyTorch dataset wrappers for foundation models
+"""
+
 
 import torch
 import torch.nn.functional as F

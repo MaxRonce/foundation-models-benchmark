@@ -1,20 +1,8 @@
 """
-2026-01-23
-base/config.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Base configuration dataclass for all FMB model trainers.
-Provides common training hyperparameters and system settings.
-
-Usage
------
-from fmb.models.base import BaseTrainingConfig
-
-@dataclass
-class MyModelConfig(BaseTrainingConfig):
-    model_specific_param: int = 42
+Module: fmb.models.base.config
+Description: Base configuration classes for all models
 """
 
 from dataclasses import dataclass

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+Foundation Models Benchmark (FMB)
+
+Module: fmb.viz.visualize_multimodel_embeddings
+Description: FMB module: fmb.viz.visualize_multimodel_embeddings
+"""
+
+"""
 Script to visualize UMAP projections of embeddings from AION, AstroPT, and AstroCLIP models,
 colored by physical parameters from a FITS catalog.
 

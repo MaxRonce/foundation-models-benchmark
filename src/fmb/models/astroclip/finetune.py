@@ -1,13 +1,8 @@
 """
-Fine-tune AstroCLIP image and/or spectrum encoder(s) on one or several Hugging Face parquet datasets.
+Foundation Models Benchmark (FMB)
 
-Example:
-    python -m fmb.models.astroclip.finetune \
-        --parquet-path hf://datasets/.../train.parquet \
-        --checkpoint data/weights/weights_astroclip/astroclip.ckpt \
-        --output-path outputs/image_encoder_ft.pt \
-        --output-ckpt outputs/astroclip_image_ft.ckpt \
-        --epochs 5 --batch-size 32 --device cuda --amp
+Module: fmb.models.astroclip.finetune
+Description: AstroCLIP fine-tuning script
 """
 
 from __future__ import annotations

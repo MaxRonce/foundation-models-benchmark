@@ -1,16 +1,8 @@
 """
-2026-01-23
-base/__init__.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Base module for shared training infrastructure across all FMB models.
-Provides abstract base classes and utilities for standardized training.
-
-Usage
------
-from fmb.models.base import BaseTrainer, BaseTrainingConfig
+Module: fmb.models.base.__init__
+Description: FMB module: fmb.models.base.__init__
 """
 
 from fmb.models.base.config import BaseTrainingConfig

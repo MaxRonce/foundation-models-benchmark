@@ -1,17 +1,8 @@
 """
-2026-01-24
-aion/retrain.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Entry point for AION (Euclid ↔ HSC adapter) retraining.
-Delegates to retrain_euclid_hsc_adapter_unet.py.
-
-Usage
------
-python -m fmb.models.aion.retrain --epochs 15 --batch-size 8
-python -m fmb.models.aion.retrain --config configs/aion.yaml
+Module: fmb.models.aion.retrain
+Description: CLI entry point for AION retraining
 """
 
 import sys

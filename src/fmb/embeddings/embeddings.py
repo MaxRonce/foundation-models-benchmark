@@ -1,4 +1,9 @@
-"""High-level helpers to load data and compute AstroCLIP embeddings (hackathon edition)."""
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.embeddings.embeddings
+Description: Shared embedding generation utilities
+"""
 
 from __future__ import annotations
 

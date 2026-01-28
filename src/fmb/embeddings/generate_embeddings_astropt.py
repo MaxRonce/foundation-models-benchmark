@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+Foundation Models Benchmark (FMB)
+
+Module: fmb.embeddings.generate_embeddings_astropt
+Description: Generate embeddings using AstroPT
+"""
+
+"""
 Run inference with the trained astroPT multimodal model and export embeddings.
 """
 import argparse

@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.paths
+Description: Centralized path management from config.yaml
+"""
+
 from __future__ import annotations
 
 import os

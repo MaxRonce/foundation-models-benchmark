@@ -1,22 +1,8 @@
 """
-2026-01-23
-aion/trainer.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-AION-specific trainer implementing the Euclid ↔ HSC adapter training loop.
-
-Usage
------
-from fmb.models.aion.trainer import AIONTrainer
-from fmb.models.aion.config import AIONTrainingConfig
-from fmb.models.aion.model import load_aion_components
-
-euclid_to_hsc, hsc_to_euclid, codec = load_aion_components(device='cuda')
-config = AIONTrainingConfig()
-trainer = AIONTrainer(euclid_to_hsc, hsc_to_euclid, codec, config, train_loader)
-trainer.train()
+Module: fmb.models.aion.trainer
+Description: AION training loop implementation
 """
 
 from typing import Any, Dict

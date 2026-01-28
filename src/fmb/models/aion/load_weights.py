@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.aion.load_weights
+Description: AION weight loading utilities
+"""
+
 from pathlib import Path
 
 import torch

@@ -1,21 +1,10 @@
 """
-Script to generate a publication-ready combined UMAP figure.
-Displays six panels in a 2x3 grid:
-- Top Row: UMAP colored by physical parameter (e.g., Redshift) for AstroPT, AION, and AstroCLIP.
-- Bottom Row: UMAP with thumbnails for AstroPT, AION, and AstroCLIP.
+Foundation Models Benchmark (FMB)
 
-Usage:
-    python -m scratch.plot_paper_combined_umap \
-        --aion-embeddings /path/to/aion.pt \
-        --astropt-embeddings /path/to/astropt.pt \
-        --astroclip-embeddings /path/to/astroclip.pt \
-        --catalog /path/to/catalog.fits \
-        --index euclid_index.csv \
-        --coords-cache paper/umap_coords_cache.pt \
-        --physical-param Z \
-        --save paper/paper_combined_umap.png \
-        --grid-rows 25 --grid-cols 25
+Module: fmb.viz.combined_umap
+Description: Multi-model UMAP comparison visualization
 """
+
 import argparse
 from pathlib import Path
 from typing import Sequence, Optional, Tuple

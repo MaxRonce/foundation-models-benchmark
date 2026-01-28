@@ -1,6 +1,8 @@
 """
-Visualization utilities for the FMB project.
-Handles sample collection, image preparation, and index loading.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.viz.utils
+Description: General visualization helpers
 """
 
 import csv

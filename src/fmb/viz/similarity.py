@@ -1,7 +1,10 @@
 """
-Similarity Visualization Utilities.
-Functions to display grids of query and neighbor objects (Images + Spectra).
+Foundation Models Benchmark (FMB)
+
+Module: fmb.viz.similarity
+Description: Similarity grid visualization
 """
+
 from pathlib import Path
 from typing import Sequence, Optional, Dict
 

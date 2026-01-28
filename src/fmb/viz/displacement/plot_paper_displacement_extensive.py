@@ -1,10 +1,10 @@
 """
-Script to generate an EXTENSIVE 9x9 displacement analysis figure.
-Compares every (Model, Modality) pair against every other.
-Output:
-1. paper_displacement_extensive_heatmap.png (Retention summary)
-2. paper_displacement_extensive_grid.png (81 histograms)
+Foundation Models Benchmark (FMB)
+
+Module: fmb.viz.displacement.plot_paper_displacement_extensive
+Description: FMB module: fmb.viz.displacement.plot_paper_displacement_extensive
 """
+
 import argparse
 from pathlib import Path
 from typing import Sequence, Optional, Dict, List

@@ -1,17 +1,10 @@
 """
-Script to generate a publication-ready CROSS-MODALITY displacement analysis figure.
-Displays a 3x3 grid:
-Rows: Source Modality (Images, Spectra, Joint)
-Columns: Target Modality (Images, Spectra, Joint)
-Each cell shows overlaid histograms for AION, AstroPT, and AstroCLIP.
+Foundation Models Benchmark (FMB)
 
-Usage:
-    python -m scratch.plot_paper_displacement_cross \
-        --aion-scores paper/Final_results/_aion.csv \
-        --astropt-scores paper/Final_results/_astropt.csv \
-        --astroclip-scores paper/Final_results/_astroclip.csv \
-        --save paper/Final_results/paper_displacement_cross.png
+Module: fmb.viz.displacement.plot_paper_displacement_cross
+Description: FMB module: fmb.viz.displacement.plot_paper_displacement_cross
 """
+
 import argparse
 from pathlib import Path
 from typing import Sequence, Optional, Dict, List

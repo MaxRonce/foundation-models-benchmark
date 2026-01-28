@@ -1,17 +1,8 @@
 """
-2026-01-23
-aion/config.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Configuration dataclass for AION (Euclid ↔ HSC adapter) training.
-
-Usage
------
-from fmb.models.aion.config import AIONTrainingConfig
-
-config = AIONTrainingConfig(epochs=15, batch_size=16)
+Module: fmb.models.aion.config
+Description: AION model configuration
 """
 
 from dataclasses import dataclass
