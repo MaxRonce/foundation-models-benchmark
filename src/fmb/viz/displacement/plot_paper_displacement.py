@@ -1,16 +1,10 @@
 """
-Script to generate a publication-ready displacement analysis figure for 3 models and 3 embedding types.
-Displays a 3x3 grid:
-Rows: Embedding Types (Images, Spectra, Joint)
-Columns: Model Comparisons (AION -> AstroPT, AstroPT -> AstroCLIP, AstroCLIP -> AION)
+Foundation Models Benchmark (FMB)
 
-Usage:
-    python -m scratch.plot_paper_displacement \
-        --aion-scores paper/Final_results/_aion.csv \
-        --astropt-scores paper/Final_results/_astropt.csv \
-        --astroclip-scores paper/Final_results/_astroclip.csv \
-        --save paper/Final_results/paper_displacement_multi.png
+Module: fmb.viz.displacement.plot_paper_displacement
+Description: FMB module: fmb.viz.displacement.plot_paper_displacement
 """
+
 import argparse
 from pathlib import Path
 from typing import Sequence, Optional, Dict, List

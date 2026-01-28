@@ -1,7 +1,10 @@
 """
-Cosine Similarity Anomaly Detection.
-computes alignment between image and spectrum embeddings.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.detection.cosine
+Description: Cosine mismatch detection between modalities
 """
+
 import argparse
 import sys
 from pathlib import Path

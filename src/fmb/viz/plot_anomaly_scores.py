@@ -1,13 +1,10 @@
 """
-Script to visualize Normalizing Flow anomaly scores on UMAP projections.
-It colors the UMAP points based on log-probability, anomaly sigma, or rank.
+Foundation Models Benchmark (FMB)
 
-Usage:
-    python -m scratch.plot_anomaly_scores \
-        --embeddings /path/to/embeddings.pt \
-        --scores-csv scratch/outputs/anomaly_scores.csv \
-        --output-dir scratch/outputs/anomaly_umaps
+Module: fmb.viz.plot_anomaly_scores
+Description: FMB module: fmb.viz.plot_anomaly_scores
 """
+
 import argparse
 import csv
 from pathlib import Path

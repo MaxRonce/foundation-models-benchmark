@@ -1,7 +1,8 @@
-"""Adapter module to load local Arrow dataset for AstroCLIP fine-tuning.
+"""
+Foundation Models Benchmark (FMB)
 
-This module provides a loader that works with the local HuggingFace cache format (.arrow files)
-instead of parquet files, using the same approach as EuclidDESIDataset.
+Module: fmb.data.astroclip_loader
+Description: Arrow dataset loader for AstroCLIP
 """
 
 from pathlib import Path
@@ -84,7 +85,6 @@ def load_local_arrow_dataset(
         dataset = dataset.select(indices)
     
     # Convert to pandas DataFrame
-    # Note: HuggingFace Dataset.to_pandas() works well for most cases
     df = dataset.to_pandas()
     
     print(f"✓ Converted to DataFrame with {len(df)} rows")

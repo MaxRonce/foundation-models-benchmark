@@ -1,4 +1,9 @@
-"""Local-aware codec manager that supports offline operation."""
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.aion.codec_manager
+Description: Local-aware codec manager for offline operation
+"""
 
 from __future__ import annotations
 
@@ -48,7 +53,6 @@ class LocalCodecManager(CodecManager):
                 config = self._load_config(config_path)
                 repo_ref = str(self.repo)
             else:
-                # print(f"codecs/{modality_type.name}/config.json not found in {self.repo}")
                 config_path = hf_hub_download(
                     HF_REPO_ID, f"codecs/{modality_type.name}/config.json"
                 )

@@ -1,7 +1,10 @@
 """
-Multimodal/Fusion Anomaly Detection.
-Combines Cosine mismatches and NF density outliers to find multimodal anomalies.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.detection.multimodal
+Description: Multimodal fusion-based anomaly detection
 """
+
 import argparse
 import sys
 from pathlib import Path

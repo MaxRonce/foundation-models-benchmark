@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.setup.download_data
+Description: Download Euclid+DESI dataset from HuggingFace
+"""
+
 import numpy as np 
 from tqdm import tqdm  
 import matplotlib.pyplot as plt

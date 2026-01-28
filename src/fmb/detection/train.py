@@ -1,6 +1,10 @@
 """
-Training Logic for Normalizing Flows.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.detection.train
+Description: Training script for Normalizing Flows
 """
+
 import numpy as np
 import torch
 import torch.nn as nn

@@ -1,22 +1,8 @@
-"""Training script for multimodal AstroPT using Euclid images + DESI spectra.
+"""
+Foundation Models Benchmark (FMB)
 
-This script adapts the multimodal training approach to work with the 
-Euclid+DESI HuggingFace dataset, training on both RGB images and spectra
-simultaneously.
-
-USAGE EXAMPLES:
-===============
-
-Single GPU training:
--------------------
-python models/astropt/retrain_spectra_images.py --batch-size 8 --compile
-
-Multi-GPU training (2 GPUs):
----------------------------
-torchrun --standalone --nproc_per_node=2 models/astropt/retrain_spectra_images.py \\
-    --batch-size 16 \\
-    --grad-accum 4 \\
-    --compile
+Module: fmb.models.astropt.retrain_spectra_images
+Description: AstroPT multimodal training script (DDP-compatible)
 """
 
 import argparse
@@ -376,12 +362,7 @@ def estimate_loss(model, train_loader, val_loader, config, modality_registry, de
                 print(f"Warning: Empty inputs for {split} batch {i}")
                 continue
             
-            # Debug: print inputs info
-            # if i == 0:  # Only for first batch
-            #     print(f"Debug {split} inputs keys: {inputs.keys()}")
-            #     for key, val in inputs.items():
-            #         if isinstance(val, torch.Tensor):
-            #             print(f"  {key}: {val.shape}, dtype: {val.dtype}")
+
             
             with ctx:
                 # Proper target preparation for autoregressive training
@@ -846,7 +827,6 @@ def main():
         )
         
         if not inputs:
-            # print(f"Warning: Empty batch at iteration {iter_num}")
             continue
             
         with ctx:

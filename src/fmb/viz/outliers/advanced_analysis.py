@@ -1,12 +1,10 @@
 """
-Script to generate ADVANCED publication figures:
-1. Spearman Correlation Clustermap (Global similarity)
-2. Jaccard (IoU) Clustermap for Top 1% (Anomaly overlap)
-3. Disagreement Scatter Plot (AION Joint vs AstroPT Joint)
-4. Extraction of "Controversial" objects (High in one, Low in other)
+Foundation Models Benchmark (FMB)
 
-Refactored for FMB CLI Integration.
+Module: fmb.viz.outliers.advanced_analysis
+Description: Cross-model outlier comparison analysis
 """
+
 import argparse
 import sys
 from pathlib import Path

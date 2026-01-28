@@ -1,7 +1,10 @@
 """
-Main Entry Point for Outlier Detection.
-Orchestrates data loading, model building, training, and result saving.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.detection.run
+Description: Inference and anomaly scoring
 """
+
 import argparse
 import sys
 import yaml

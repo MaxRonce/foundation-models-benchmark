@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.aion.modalities
+Description: AION modality definitions (EuclidImage, DESISpectrum)
+"""
+
 from abc import ABC
 from dataclasses import dataclass
 from typing import ClassVar

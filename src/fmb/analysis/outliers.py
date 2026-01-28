@@ -1,7 +1,10 @@
 """
-Anomaly Analysis Module.
-Analyzes and visualizes the results from the multimodal anomaly detection pipeline.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.analysis.outliers
+Description: Outlier detection orchestration
 """
+
 import argparse
 from pathlib import Path
 from typing import Optional, List, Dict

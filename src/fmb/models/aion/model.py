@@ -1,5 +1,8 @@
 """
-AION model components: U-Net adapters, dataset utilities, and codec loading.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.aion.model
+Description: AION multimodal foundation model
 """
 
 import json

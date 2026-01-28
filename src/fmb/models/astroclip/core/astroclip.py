@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.astroclip.core.astroclip
+Description: AstroCLIP main model
+"""
+
 import os
 import sys
 from typing import Tuple

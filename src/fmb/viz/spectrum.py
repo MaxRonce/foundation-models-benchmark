@@ -1,6 +1,10 @@
 """
-Spectrum visualization utilities.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.viz.spectrum
+Description: Spectrum extraction and visualization utilities
 """
+
 import numpy as np
 import torch
 from typing import Optional, Tuple

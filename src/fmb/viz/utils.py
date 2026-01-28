@@ -1,6 +1,8 @@
 """
-Visualization utilities for the FMB project.
-Handles sample collection, image preparation, and index loading.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.viz.utils
+Description: General visualization helpers
 """
 
 import csv
@@ -108,92 +110,24 @@ def collect_samples_with_index(
             print(f"Loading split '{split}' to fetch {len(entries)} samples")
         dataset = EuclidDESIDataset(split=split, cache_dir=cache_dir, verbose=False)
         
-        # Determine strict offset if using global indices (heuristic)
-        # indices in 'test' split start high (e.g. 84) but dataset is small (e.g. 16)
-        # We assume indices are global 0..N across train+test
+        # Indices are global 0..N across train+test
         min_idx = min(idx for _, idx in entries)
         offset = 0
         if min_idx >= len(dataset):
-             # Likely global indices where this split is appended after another
-             # Heuristic: if smallest index is >= size, try shifting by the smallest index found in this group
-             # or better, just re-scan/match by ID if possible? 
-             # No, 'EuclidDESIDataset' doesn't support fast ID lookup.
-             # The user's CSV implies: train 0-83, test 84-99. 
-             # dataset(test) has relative indices 0-15.
-             # So for test, we subtract... something. 
-             # We can try to infer the offset from the first item if we assume contiguous blocks
              pass
 
-        # Better approach: 
-        # If absolute index is out of bounds, check if subtracting the 'train' size helps?
-        # But we don't know the train size easily here without loading it.
-        # Let's rely on the fact that indices in the CSV are 0-based GLOBAL.
-        # We need to assume standard order: train then test.
-        
-        # Just-in-time "scan" fallback if index is out of range?
-        # Or hardcode the offset logic if split == 'test'?
-        
-        # Let's use the loaded dataset size to infer modulo or offset
-        # IF split is 'test' and indices are > len(dataset), subtract (MinIndex or something)
-        # Actually, the most reliable way without external knowledge is to assume 
-        # the CSV indices are simply 'global' and we need 'local'.
-        
-        # We will iterate and try to adjust if determining an offset is obvious.
-        # For this specific case (Euclid+DESI), we know Train is first.
-        
-        # HACK/FIX: If split is 'test' and max_index >= len(dataset), subtract the min_index found in that block?
-        # Risk: what if we just request one sample?
-        
-        # Safer fix: if index out of bounds, try idx % len(dataset)? 
-        # No, that's dangerous.
-        
-        # Let's subtract the offset based on the CSV structure. 
-        # The CSV has 'train' 0..83, 'test' 84..99.
-        # We can detect the start index of the split from the entries themselves.
+    
         sorted_entries = sorted(entries, key=lambda x: x[1])
         base_offset = 0
         if split == 'test' and sorted_entries[0][1] >= len(dataset):
-             # Heuristic: assume strict contiguity and test starts after train
-             # We can't know the exact offset without loading train, BUT we can guess
-             # if the indices are clustered.
-             # Let's try to normalize by the first index of the block? 
-             # No, that fails if we randomly sample.
-             
-             # Fallback: Just search for the object ID if index fails? No, dataset doesn't support search.
-             pass
+             # For 'test' split, subtract the starting index to convert to local indices
+             base_offset = sorted_entries[0][1]
 
-        # Correct logic: The 'index' in the CSV is likely useless for direct access if it's global
-        # UNLESS we know the global ordering.
-        # Given the previous error "index 95 out of range for split 'test' (size 16)", 
-        # it's clear we need to map global 84 -> local 0.
-        # If split is test, try subtracting (indices[0] of test?) or just use the local relative index?
-        # The CSV is: 84 -> test. we need 84 - 84 = 0.
-        
-        # Let's assume the CSV *should* have had local indices, or we must correct them.
-        # We can compute the shift from the minimum index in the group IF we assume the group covers the start.
-        # But we effectively just need to shift 'train' by 0 and 'test' by [size of train].
-        # We don't know size of train here.
-        
-        # Wait, `collect_samples` (the other function) scans by ID. 
-        # Maybe we should just fallback to `collect_samples` if indices look wrong?
-        
-        # Let's implement a robust "try-except" block.
         first_idx = sorted_entries[0][1]
         use_offset = 0
         if sorted_entries[-1][1] >= len(dataset):
-            # Indices are out of bounds. Try to shift.
-            # Assuming the chunk of indices is contiguous-ish and starts relatively at 0
             if split == 'test':
-                 # In this dataset, test comes after train.
-                 # The offset is likely `first_idx` if we are grabbing the full set, 
-                 # but we might be grabbing a subset.
-                 # Let's try to infer offset from the CSV itself?
-                 # No, simply use the difference between the requested index and the dataset length? Impossible.
-                 
-                 # PROPER FIX:
-                 # Load 'train' to get its length if split is 'test'.
                  if split == 'test':
-                     # This is slightly inefficient but safe
                      ds_train = EuclidDESIDataset(split='train', cache_dir=cache_dir, verbose=False)
                      use_offset = len(ds_train)
         
@@ -202,9 +136,6 @@ def collect_samples_with_index(
             if local_idx < 0 or local_idx >= len(dataset):
                 # Only check fallback if strictly needed
                 if use_offset == 0 and split == 'test':
-                      # Try "lazy" offset discovery: if 84 is requested and size is 16, 
-                      # and we didn't calculate offset yet.
-                      # We can try to guess the offset is `idx` if it's the first one? No.
                       pass
                 
                 if verbose:
@@ -217,8 +148,7 @@ def collect_samples_with_index(
             if sample_id != str(oid):
                 if verbose:
                     print(f"ID Mismatch at {local_idx}: expected {oid}, got {sample_id}. Fallback scanning...")
-                # Fallback: scan for it (slow but correct)
-                # This handles scrambled indices
+
                 found = False
                 for i, s in enumerate(dataset):
                     if str(s.get("object_id") or s.get("targetid")) == str(oid):

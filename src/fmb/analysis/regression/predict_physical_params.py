@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+Foundation Models Benchmark (FMB)
+
+Module: fmb.analysis.regression.predict_physical_params
+Description: Physical parameter prediction from embeddings
+"""
+
+"""
 Script to predict physical parameters from foundation model embeddings.
 Models: Ridge (Linear Baseline), LightGBM (Non-linear).
 Metrics: R², RMSE, PR, EPD, PES, CWP.

@@ -1,10 +1,10 @@
 """
-Script to generate a publication-ready single object visualization.
-Displays a single row with:
-[Spectrum (Restframe)] [VIS band] [NISP-Y band] [NISP-J band] [NISP-H band]
+Foundation Models Benchmark (FMB)
 
-Refactored for FMB CLI Integration.
+Module: fmb.viz.outliers.single_object
+Description: FMB module: fmb.viz.outliers.single_object
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -98,7 +98,6 @@ def plot_spectrum(ax: plt.Axes, sample: dict, smooth_sigma: float = 2.0):
     ax.set_xlabel(r"Rest-frame Wavelength [\AA]")
     ax.set_ylabel("Flux [arb.]")
     ax.set_xlim(w_rest.min(), w_rest.max())
-    # ax.set_title(f"Redshift $z={redshift:.3f}$", fontsize=10)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 

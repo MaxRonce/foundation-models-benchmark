@@ -1,18 +1,8 @@
 """
-2026-01-23
-base/utils.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Utility functions for model training: seed setting, AMP setup, logging.
-
-Usage
------
-from fmb.models.base.utils import set_seed, setup_amp
-
-set_seed(42)
-scaler, ctx = setup_amp(device='cuda', dtype='bfloat16')
+Module: fmb.models.base.utils
+Description: Common model utilities
 """
 
 import random

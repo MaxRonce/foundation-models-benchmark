@@ -1,4 +1,9 @@
-"""High-level helpers to load data and compute AstroCLIP embeddings (hackathon edition)."""
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.data.astroclip_parquet
+Description: Parquet data source for AstroCLIP
+"""
 
 from __future__ import annotations
 
@@ -18,16 +23,7 @@ from huggingface_hub import hf_hub_download, list_repo_files
 from huggingface_hub.utils import EntryNotFoundError
 from PIL import Image
 
-# Removed unused imports from original embeddings.py for this extraction
-# from datasets import load_dataset
-# from sklearn.decomposition import PCA
-# from torch.utils.data import DataLoader, Dataset
-# from astroclip.data.datamodule import AstroClipCollator
-# from astroclip.models import AstroClipModel
-
 # Define constants locally if needed, or rely on env
-# HACKATHON_ROOT = Path(__file__).resolve().parents[2] # This was specific to original layout
-# DEFAULT_CACHE_DIR = HACKATHON_ROOT / ".cache"
 DEFAULT_CACHE_DIR = Path(os.getcwd()) / ".cache"
 CACHE_DIR = Path(os.environ.get("ASTROCLIP_CACHE_DIR", DEFAULT_CACHE_DIR))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)

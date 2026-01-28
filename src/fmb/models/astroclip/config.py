@@ -1,17 +1,8 @@
 """
-2026-01-23
-astroclip/config.py
+Foundation Models Benchmark (FMB)
 
-
-Description
------------
-Configuration dataclass for AstroCLIP image encoder fine-tuning.
-
-Usage
------
-from fmb.models.astroclip.config import AstroCLIPTrainingConfig
-
-config = AstroCLIPTrainingConfig(epochs=5, batch_size=128)
+Module: fmb.models.astroclip.config
+Description: AstroCLIP configuration
 """
 
 from dataclasses import dataclass

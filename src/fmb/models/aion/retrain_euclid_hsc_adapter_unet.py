@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+Foundation Models Benchmark (FMB)
+
+Module: fmb.models.aion.retrain_euclid_hsc_adapter_unet
+Description: AION fine-tuning with U-Net adapter
+"""
+
+"""
 Euclid <-> HSC adapters (U-Net) around frozen AION ImageCodec.
 
 Key features:

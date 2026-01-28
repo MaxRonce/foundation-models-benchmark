@@ -1,225 +1,144 @@
-# Models Architecture
+# Models Module
+
+Foundation model implementations and training scripts.
 
 ## Overview
 
-The `src/fmb/models/` directory contains all model training implementations for FMB (Foundation Models Benchmark). The architecture has been refactored to eliminate code duplication and provide a standardized training interface.
+This module contains three foundation models adapted for astronomical data:
+- **AION**: Multimodal foundation model
+- **AstroPT**: GPT-based transformer for images and spectra
+- **AstroCLIP**: Vision-language contrastive model
 
 ## Structure
 
 ```
-src/fmb/models/
-├── base/                    # Shared training infrastructure
-│   ├── __init__.py
-│   ├── config.py           # BaseTrainingConfig
-│   ├── trainer.py          # BaseTrainer (abstract)
-│   └── utils.py            # Utilities (seed, AMP, etc.)
-│
-├── aion/                    # AION (Euclid ↔ HSC adapters)
-│   ├── config.py           # AIONTrainingConfig
-│   ├── model.py            # U-Net adapters + codec loading
-│   ├── trainer.py          # AIONTrainer
-│   ├── retrain.py          # CLI entry point
-│   ├── codec_manager.py    # Legacy codec utilities
-│   ├── load_weights.py     # Legacy weight loading
-│   └── retrain_euclid_codec.py  # Codec-specific retraining
-│
-├── astropt/                 # AstroPT (multimodal transformer)
-│   ├── config.py           # AstroPTTrainingConfig
-│   ├── retrain.py          # CLI entry point (delegates)
-│   ├── retrain_spectra_images.py  # Full implementation
-│   └── euclid_desi_dataset/  # Dataset utilities
-│
-├── astroclip/               # AstroCLIP (contrastive learning)
-│   ├── core/               # Model architecture
-│   │   ├── astroclip.py
-│   │   ├── modules.py
-│   │   └── specformer.py
-│   ├── config.py           # AstroCLIPTrainingConfig
-│   ├── finetune.py         # CLI entry point (delegates)
-│   └── finetune_image_encoder.py  # Full implementation
-│
-└── external_imports.py      # Centralized external library management
+models/
+├── aion/           # AION multimodal model
+├── astropt/        # AstroPT transformer
+├── astroclip/      # AstroCLIP vision-language
+└── base/           # Shared utilities
 ```
 
-## Base Infrastructure
+---
 
-### BaseTrainer
+## AION
 
-Abstract base class providing standardized training loop:
-- Automatic Mixed Precision (AMP)
-- Gradient accumulation
-- Gradient clipping
-- Checkpointing
-- Validation
-- Loss history tracking
+**Path**: `models/aion/`
 
-**Usage:**
-```python
-from fmb.models.base import BaseTrainer, BaseTrainingConfig
+Multimodal foundation model supporting images, spectra, and metadata.
 
-class MyTrainer(BaseTrainer):
-    def train_step(self, batch):
-        # Implement forward pass
-        return {"loss": loss}
-    
-    def val_step(self, batch):
-        # Implement validation
-        return {"loss": val_loss}
+### Key Files
+
+- `model.py` - Main AION model wrapper
+- `retrain.py` - CLI entry point for retraining
+- `retrain_euclid_hsc_adapter_unet.py` - Fine-tuning script with U-Net adapter
+- `trainer.py` - Training loop implementation
+- `codec_manager.py` - Local codec loading (offline-compatible for Candide/Jean-Zay Use)
+- `modalities.py` - Modality definitions (new EuclidImage, DESISpectrum)
+- `config.py` - Model configuration
+- `load_weights.py` - Weight loading utilities
+
+---
+
+## AstroPT
+
+**Path**: `models/astropt/`
+
+GPT-based transformer trained on patches of images and spectra.
+
+### Key Files
+
+- `retrain.py` - CLI wrapper
+- `retrain_spectra_images.py` - Main training script (supports DDP)
+- `config.py` - Model configuration, from LEGACY code
+- `euclid_desi_dataset/multimodal_dataloader.py` - Custom collate functions from LEGACY code
+
+**Architecture:**
+- Modality-aware GPT with separate patch embeddings
+- Image patches: 16×16 pixels
+- Spectrum patches: 10 wavelength bins
+- Joint embedding space
+
+---
+
+## AstroCLIP
+
+**Path**: `models/astroclip/`
+
+Vision-language contrastive model using CLIP architecture.
+
+### Key Files
+
+- `finetune.py` - Fine-tuning script
+- `config.py` - Model and training config
+- `core/astroclip.py` - Main AstroCLIP model adapter for finetuning during AstroINFO2025 hackathon
+- `core/modules.py` - Vision and spectrum encoders
+- `core/specformer.py` - Spectrum transformer
+
+
+## Base Utilities
+
+**Path**: `models/base/`
+
+Shared utilities for all models.
+
+### Files
+
+- `config.py` - Base configuration classes
+- `trainer.py` - Abstract trainer interface
+- `utils.py` - Common model utilities
+
+---
+
+## External Imports
+
+**File**: `external_imports.py`
+
+Handles imports from external submodules (astroPT, AION, AstroCLIP repos in `external/`).
+
+---
+
+## Weight Management
+
+### Base Weights (Pretrained)
+Loaded from `data/weights/base/`:
+- `aion_checkpoint/`
+- `astropt_checkpoint.pt`
+- `astroclip_checkpoint/`
+
+### Retrained Weights
+Saved to `runs/weights/`:
+- `aion/ckpt.pt`
+- `astropt/ckpt.pt`
+- `astroclip/best.pt`
+
+Paths configured in `paths_local.yaml`.
+
+---
+
+## Configuration
+
+All model training uses YAML configs in `src/fmb/configs/retrain/`:
+- `aion.yaml`
+- `astropt.yaml`
+- `astroclip.yaml`
+
+Example:
+```yaml
+# astropt.yaml
+batch_size: 8
+learning_rate: 6e-4
+max_iters: 3000
+gradient_accumulation_steps: 4
 ```
 
-### BaseTrainingConfig
-
-Dataclass with common training hyperparameters:
-- `epochs`, `batch_size`, `learning_rate`
-- `weight_decay`, `grad_clip`
-- `device`, `seed`, `amp_dtype`
-- `log_interval`, `checkpoint_interval`
-
-## Model-Specific Components
-
-### AION
-
-**Purpose:** Train Euclid ↔ HSC image translation adapters using frozen AION codec.
-
-**Entry point:**
-```bash
-python -m fmb.models.aion.retrain --epochs 15 --batch-size 8
-```
-
-**Key components:**
-- `EuclidToHSC`, `HSCToEuclid`: U-Net adapters
-- `load_aion_components()`: Load adapters + frozen codec
-- `AIONTrainer`: Implements roundtrip training (Euclid → HSC → Codec → HSC → Euclid)
-
-### AstroPT
-
-**Purpose:** Train multimodal transformer on images + spectra.
-
-**Entry point:**
-```bash
-python -m fmb.models.astropt.retrain --epochs 30 --batch-size 16
-```
-
-**Key components:**
-- Delegates to `retrain_spectra_images.py` (full implementation)
-- Supports DDP (multi-GPU)
-- Custom modality registry for images and spectra
-
-### AstroCLIP
-
-**Purpose:** Fine-tune CLIP-style image encoder on astronomical data.
-
-**Entry point:**
-```bash
-python -m fmb.models.astroclip.finetune --checkpoint path/to/ckpt --epochs 5
-```
-
-**Key components:**
-- Delegates to `finetune_image_encoder.py` (full implementation)
-- Supports Arrow cache or Parquet data sources
-- Optional spectrum encoder fine-tuning
-
-## External Dependencies
-
-The `external_imports.py` module automatically adds external libraries to `sys.path`:
-- `external/AION/`
-- `external/astroPT/src/`
-- `external/AstroCLIP/`
-
-**Initialize submodules:**
-```bash
-git submodule update --init --recursive
-```
+---
 
 ## CLI Integration
 
-All models are accessible via the unified CLI:
-
+All models accessible via:
 ```bash
-# AION
-python -m fmb.cli retrain aion --epochs 15
-
-# AstroPT
-python -m fmb.cli retrain astropt --batch-size 16
-
-# AstroCLIP
-python -m fmb.cli retrain astroclip --checkpoint path/to/ckpt
+fmb retrain <model> [OPTIONS]
 ```
 
-## Migration Summary
-
-### Before Refactoring
-- **11 training scripts** across 3 models
-- **~3500 lines** of duplicated code
-- **60% code duplication** (argparse, training loops, checkpointing)
-- Manual `sys.path` manipulation in every file
-
-### After Refactoring
-- **3 entry points** (one per model)
-- **~800 lines** of shared infrastructure
-- **<5% code duplication**
-- Centralized external imports
-
-### Benefits
--  **-77% code reduction**
--  **Standardized training interface**
--  **Easier testing and maintenance**
--  **Consistent checkpointing and logging**
--  **Reusable base components**
-
-## Development Guidelines
-
-### Adding a New Model
-
-1. Create `src/fmb/models/mymodel/config.py`:
-   ```python
-   @dataclass
-   class MyModelConfig(BaseTrainingConfig):
-       model_specific_param: int = 42
-   ```
-
-2. Create `src/fmb/models/mymodel/trainer.py`:
-   ```python
-   class MyModelTrainer(BaseTrainer):
-       def train_step(self, batch):
-           # Implement training logic
-           return {"loss": loss}
-       
-       def val_step(self, batch):
-           # Implement validation logic
-           return {"loss": val_loss}
-   ```
-
-3. Create `src/fmb/models/mymodel/retrain.py`:
-   ```python
-   def main():
-       config = parse_args()
-       trainer = MyModelTrainer(model, config, train_loader)
-       trainer.train()
-   ```
-
-4. Update `src/fmb/cli.py` to add the new model.
-
-### Code Standards
-
-- **Headers:** All files must have NumPy-style docstrings with date, filename, author, description, and usage
-- **Type hints:** Required for all function signatures
-- **Logging:** Use `print()` for user-facing messages, avoid `logging` module
-- **Imports:** Use `from fmb.models.external_imports import setup_external_paths` for external dependencies
-- **AMP:** Always use `keras.ops` equivalent or PyTorch AMP via `BaseTrainer`
-
-## Troubleshooting
-
-### "AION not found" error
-```bash
-git submodule update --init --recursive
-```
-
-### "Module not found" during training
-Check that `external_imports.py` is being imported. Add to your script:
-```python
-from fmb.models import external_imports  # Auto-setup
-```
-
-### Old scripts still referenced
-The old scripts (`retrain_aion.py`, `train_*.py`) have been deleted. Update any custom scripts or SLURM jobs to use the new entry points.
+Where `<model>` ∈ {aion, astropt, astroclip}

@@ -1,7 +1,8 @@
-"""DataLoader for Euclid+DESI multimodal training.
+"""
+Foundation Models Benchmark (FMB)
 
-This module provides a PyTorch Dataset and collate function for training
-AstroPT on the combined Euclid images + DESI spectra dataset.
+Module: fmb.models.astropt.euclid_desi_dataset.multimodal_dataloader
+Description: Custom collate functions for multimodal data
 """
 
 import torch

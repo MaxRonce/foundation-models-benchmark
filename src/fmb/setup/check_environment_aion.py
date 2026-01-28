@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.setup.check_environment_aion
+Description: Validate AION environment and dependencies
+"""
+
 # Original script comming from https://github.com/mhuertascompany/camels-aion/tree/main and modified 
 # to be used as a test for the fmb package
 """Environment sanity checks AION model loading."""

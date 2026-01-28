@@ -1,15 +1,10 @@
 """
-Script to visualize embedding UMAPs with thumbnails.
-It creates a grid of images (and optionally spectra) corresponding to points in the UMAP space,
-allowing for visual inspection of the embedding structure.
+Foundation Models Benchmark (FMB)
 
-Usage:
-    python -m scratch.visualize_embedding_umap \
-        --input /path/to/embeddings.pt \
-        --embedding-key embedding_hsc_desi \
-        --figure embedding_umap_hsc_desi.png \
-        --index euclid_index.csv
+Module: fmb.viz.visualize_embedding_umap
+Description: FMB module: fmb.viz.visualize_embedding_umap
 """
+
 import argparse
 from pathlib import Path
 from typing import Sequence

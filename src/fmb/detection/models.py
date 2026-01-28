@@ -1,7 +1,10 @@
 """
-Normalizing Flow Model Definitions.
-Wraps 'normflows' to provide easy builders for Coupling vs Autoregressive flows.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.detection.models
+Description: Normalizing Flow architectures for anomaly detection
 """
+
 import torch
 import torch.nn as nn
 import normflows as nf

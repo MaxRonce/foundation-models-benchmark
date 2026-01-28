@@ -1,7 +1,10 @@
 """
-Detection Utilities.
-Data loading, processing, and I/O helpers for outlier detection.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.detection.utils
+Description: Detection utilities and helpers
 """
+
 import csv
 import random
 from pathlib import Path

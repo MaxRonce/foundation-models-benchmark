@@ -1,3 +1,10 @@
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.data.load_display_data
+Description: Euclid+DESI dataset access
+"""
+
 # load_display_data.py
 """
 Utility script to load and display samples from the Euclid+DESI dataset.

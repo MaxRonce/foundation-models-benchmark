@@ -1,6 +1,10 @@
 """
-Visualization style configuration.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.viz.style
+Description: Centralized visualization styling
 """
+
 from typing import Optional
 from pathlib import Path
 from .utils import load_viz_style

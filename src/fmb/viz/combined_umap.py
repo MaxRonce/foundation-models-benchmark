@@ -1,21 +1,10 @@
 """
-Script to generate a publication-ready combined UMAP figure.
-Displays six panels in a 2x3 grid:
-- Top Row: UMAP colored by physical parameter (e.g., Redshift) for AstroPT, AION, and AstroCLIP.
-- Bottom Row: UMAP with thumbnails for AstroPT, AION, and AstroCLIP.
+Foundation Models Benchmark (FMB)
 
-Usage:
-    python -m scratch.plot_paper_combined_umap \
-        --aion-embeddings /path/to/aion.pt \
-        --astropt-embeddings /path/to/astropt.pt \
-        --astroclip-embeddings /path/to/astroclip.pt \
-        --catalog /path/to/catalog.fits \
-        --index euclid_index.csv \
-        --coords-cache paper/umap_coords_cache.pt \
-        --physical-param Z \
-        --save paper/paper_combined_umap.png \
-        --grid-rows 25 --grid-cols 25
+Module: fmb.viz.combined_umap
+Description: Multi-model UMAP comparison visualization
 """
+
 import argparse
 from pathlib import Path
 from typing import Sequence, Optional, Tuple
@@ -403,14 +392,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     paths = load_paths()
     
     parser = argparse.ArgumentParser(description="Generate publication combined UMAP figure (AstroPT, AION, AstroCLIP)")
-    parser.add_argument("--aion-embeddings", default=paths.embeddings / "aions_embeddings.pt", help="AION .pt file")
-    parser.add_argument("--astropt-embeddings", default=paths.embeddings / "astropt_embeddings.pt", help="AstroPT .pt file")
-    parser.add_argument("--astroclip-embeddings", default=paths.embeddings / "embeddings_astroclip.pt", help="AstroCLIP .pt file")
-    parser.add_argument("--catalog", default=paths.repo_root / "data" / "DESI_DR1_Euclid_Q1_dataset_catalog_EM.fits", help="FITS catalog")
-    parser.add_argument("--index", default=paths.repo_root / "data" / "euclid_index.csv", help="Index CSV mapping object_id -> split/index")
-    parser.add_argument("--coords-cache", default=paths.repo_root / "paper" / "umap_coords_cache.pt", help="Path to pre-computed coords .pt file")
+    parser.add_argument("--aion-embeddings", default=str(paths.embeddings / "aions_embeddings.pt"), help="AION .pt file")
+    parser.add_argument("--astropt-embeddings", default=str(paths.embeddings / "astropt_embeddings.pt"), help="AstroPT .pt file")
+    parser.add_argument("--astroclip-embeddings", default=str(paths.embeddings / "embeddings_astroclip.pt"), help="AstroCLIP .pt file")
+    parser.add_argument("--catalog", default=str(paths.dataset / "DESI_DR1_Euclid_Q1_dataset_catalog_EM.fits"), help="FITS catalog")
+    parser.add_argument("--index", default=str(paths.dataset_index), help="Index CSV mapping object_id -> split/index")
+    parser.add_argument("--coords-cache", default=str(paths.analysis / "umap" / "coords_cache.pt"), help="Path to pre-computed coords .pt file")
     parser.add_argument("--physical-param", default="Z", help="Parameter to color by")
-    parser.add_argument("--save", default="paper/paper_combined_umap.png", help="Output filename")
+    parser.add_argument("--save", default=str(paths.analysis / "umap" / "combined_umap.png"), help="Output filename")
     parser.add_argument("--grid-rows", type=int, default=25, help="Grid rows")
     parser.add_argument("--grid-cols", type=int, default=25, help="Grid cols")
     parser.add_argument("--random-state", type=int, default=42, help="Random state")

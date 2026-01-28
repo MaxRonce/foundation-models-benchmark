@@ -1,7 +1,10 @@
 """
-Data Utilities for FMB.
-Helpers for reading object IDs and collecting samples from the dataset.
+Foundation Models Benchmark (FMB)
+
+Module: fmb.data.utils
+Description: Embedding loading and image preprocessing utilities
 """
+
 import csv
 from pathlib import Path
 from typing import List, Dict, Optional, Sequence, Tuple
@@ -135,7 +138,7 @@ def prepare_rgb_image(sample: Dict) -> np.ndarray:
     img_np = img_t.permute(1, 2, 0).cpu().numpy()
     # Clip 0..1
     img_np = np.clip(img_np, 0, 1)
-    return image
+    return img_np
 
 # --- Embedding Loading Utilities ---
 

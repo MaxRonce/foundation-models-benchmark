@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.setup.download_weights_astroclip
+Description: FMB module: fmb.setup.download_weights_astroclip
+"""
+
 """Download the required AstroCLIP checkpoints."""
 
 from __future__ import annotations

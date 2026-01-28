@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Foundation Models Benchmark (FMB)
+
+Module: fmb.setup.check_environment_astroclip
+Description: Validate AstroCLIP environment and dependencies
+"""
+
 """Environment sanity checks AstroCLIP model loading."""
 
 from __future__ import annotations
