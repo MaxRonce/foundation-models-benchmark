@@ -1,66 +1,58 @@
-# SLURM Scripts
+# SLURM Job Submission Scripts
 
-This directory contains SLURM batch scripts for submitting FMB pipeline tasks to the cluster.
+This directory contains SLURM batch scripts for running the FMB pipeline on HPC clusters.
 
-## Structure
+## Directory Structure
 
 ```
 slurm/
-├── 01_retrain/      # Model retraining and fine-tuning
-├── 02_embeddings/   # Embedding extraction
-├── 03_detection/    # Anomaly detection  
-└── 04_analysis/     # Analysis and visualization
+├── 01_retrain/          # Stage 1: Model adaptation
+├── 02_embeddings/       # Stage 2: Embedding extraction
+├── 03_detection/        # Stage 3: Anomaly detection
+├── 04_analysis/         # Stage 4: Analysis tasks
+├── 05_viz/              # Stage 5: Visualizations
+└── logs/                # Job output logs (created automatically)
 ```
 
 ## Usage
 
-### Submit a job
+### Direct Submission
+
 ```bash
-sbatch slurm/01_retrain/astropt.sbatch
+# Submit a specific stage
+sbatch slurm/01_retrain/aion.sbatch
+sbatch slurm/02_embeddings/aion.sbatch
+sbatch slurm/03_detection/nfs.sbatch
 ```
 
-### Monitor jobs
+### Via CLI (Recommended)
+
 ```bash
-squeue -u $USER
+# CLI automatically submits the appropriate SLURM script
+fmb retrain aion --slurm
+fmb embed aion --slurm
+fmb detect outliers --slurm
 ```
 
-### Check job output
+
+## Configuration
+
+If run on Candide@IAP : All scripts expect:
+- Environment: `.venv` (virtualenv at repository root)
+- Modules: `gcc/13.4.0`, `cuda/12.8`, `intelpython/3-2025.1.0`
+- Working directory: `$HOME/foundation-models-benchmark`
+
+Modify the `#SBATCH` directives to adjust:
+- `--time` - Walltime limit
+- `--mem` - Memory allocation
+- `--gres=gpu:N` - Number of GPUs
+- `--partition` - Cluster partition
+
+## Logs
+
+Logs are written to `slurm/logs/<job_name>_<job_id>.out` (and `.err` for some jobs).
+
+Create the logs directory if it doesn't exist:
 ```bash
-tail -f slurm/logs/retrain_astropt_<JOBID>.out
-```
-
-## Convention
-
-**All scripts call the unified CLI:**
-```bash
-python -m fmb.cli <command> <subcommand> [--options]
-```
-
-This ensures consistency between local execution and cluster runs.
-
-## Available Scripts
-
-### 01_retrain/
-- `aion_codec.sbatch` : Retrain AION codec
-- `aion_adapter.sbatch` : Retrain AION Euclid ↔ HSC adapter
-- `astropt.sbatch` : Retrain AstroPT
-- `astroclip.sbatch` : Fine-tune AstroCLIP (if exists)
-
-### 02_embeddings/
-- `aion.sbatch` : Extract AION embeddings
-- `astropt.sbatch` : Extract AstroPT embeddings
-- `astroclip.sbatch` : Extract AstroCLIP embeddings (if exists)
-
-### 03_detection/
-- `nfs.sbatch` : Anomaly detection using Normalizing Flows
-- `cosine.sbatch` : Cosine similarity-based detection (if exists)
-
-### 04_analysis/
-- `physical_params.sbatch` : Predict physical parameters from embeddings
-
-## Customization
-
-To override config parameters, pass CLI arguments in the sbatch script:
-```bash
-python -m fmb.cli retrain astropt --epochs 15 --batch-size 16
+mkdir -p slurm/logs
 ```

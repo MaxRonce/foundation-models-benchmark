@@ -22,6 +22,6 @@ source .venv/bin/activate
 python3 --version
 
 # Generate embeddings via CLI
-python -m fmb.cli embed astropt --split all
+python -m fmb.cli embed astropt --config configs/embeddings/astropt.yaml
 
 echo "Finished at $(date)"

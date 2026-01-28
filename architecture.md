@@ -1,72 +1,207 @@
-# Foundation Models Benchmark (FMB) Project Architecture
+# FMB Architecture
 
-This document describes the file and folder organization of the project following the migration to a standardized structure.
+Technical documentation for the Foundation Models Benchmark codebase organization and design philosophy.
 
-## Overview
-
-The project follows a standardized Python structure with all source code located in `src/fmb`.
+## Project Structure
 
 ```
 foundation-models-benchmark/
-├── src/                # Main source code
-│   └── fmb/            # Main Python package
-│       ├── cli.py      # Unified pipelines Entry Point (CLI)
-│       ├── data/       # Data loaders and utilities
-│       ├── models/     # Model definitions and training scripts
-│       ├── analysis/   # Post-training analysis scripts
-│       └── ...
-├── slurm/              # Submission scripts for the cluster
-├── external/           # Submodules and intact external code (AstroPT, etc.)
-├── temp/               # Temporary code or code currently being migrated (to be cleaned up)
-└── pyproject.toml      # Project configuration and dependencies
+├── src/fmb/              # Core Python package
+│   ├── cli.py            # Unified CLI entry point
+│   ├── paths.py          # Centralized path management
+│   ├── models/           # Model-specific implementations
+│   │   ├── aion/         # AION adapter training
+│   │   ├── astropt/      # AstroPT fine-tuning
+│   │   └── astroclip/    # AstroCLIP fine-tuning
+│   ├── embeddings/       # Embedding extraction scripts
+│   │   ├── generate_embeddings_aion.py
+│   │   ├── generate_embeddings_astropt.py
+│   │   └── generate_embeddings_astroclip.py
+│   ├── detection/        # Anomaly detection methods
+│   │   ├── run.py        # Normalizing Flows (main)
+│   │   ├── cosine.py     # Cross-modal cosine similarity
+│   │   └── multimodal.py # Fusion and ranking
+│   ├── analysis/         # Post-detection analysis
+│   │   ├── outliers.py   # Correlation, Jaccard, uplift
+│   │   ├── similarity.py # Visual similarity search
+│   │   ├── displacement.py # Cross-model retention
+│   │   └── regression/   # Physical parameter prediction
+│   ├── viz/              # Visualization scripts
+│   │   ├── plot_paper_combined_umap.py
+│   │   ├── similarity.py
+│   │   ├── outliers/     # Anomaly-specific plots
+│   │   │   ├── plot_paper_advanced_analysis.py
+│   │   │   ├── plot_paper_outlier_grid.py
+│   │   │   └── plot_paper_single_object.py
+│   │   ├── utils.py      # Shared viz utilities
+│   │   ├── spectrum.py   # Spectrum plotting helpers
+│   │   └── style.py      # Unified matplotlib style
+│   ├── data/             # Data loading and indexing
+│   │   ├── load_display_data.py  # Main dataset loader
+│   │   ├── index_dataset.py      # Index generation
+│   │   ├── utils.py              # Shared utilities
+│   │   └── astroclip_loader.py   # AstroCLIP-specific
+│   └── configs/          # YAML configurations
+│       ├── paths.template.yaml   # Path config template
+│       └── viz_style.yaml        # Matplotlib style
+├── configs/              # User-editable configs
+│   ├── retrain/          # Model training configs
+│   ├── embeddings/       # Embedding extraction configs
+│   ├── analysis/         # Analysis task configs
+│   └── detection/        # Detection method configs
+├── external/             # Foundation model submodules
+│   ├── AION/             # Original AION repository
+│   ├── astroPT/          # Original AstroPT repository
+│   └── AstroCLIP/        # Original AstroCLIP repository
+├── slurm/                # HPC job submission scripts
+│   ├── 01_retrain/
+│   ├── 02_embeddings/
+│   ├── 03_detection/
+│   └── 04_analysis/
+└── tests/                # Unit tests
 ```
 
-## Directory Details
+## Design Philosophy
 
-### `src/fmb/` (Project Core)
+### 1. Centralized Path Management
 
-*   **`cli.py`** : Unified Command Line Interface. It is the entry point for launching training and processing tasks.
-    *   Usage : `python -m fmb.cli --help`
+All paths are managed via `src/fmb/paths.py` and configured in `src/fmb/configs/paths_local.yaml`:
 
-*   **`models/`** : Contains model implementations and specific training scripts.
-    *   **`astropt/`** 
-        *   `retrain_spectra_images.py` : Multimodal training script (Images + Spectra).
-        *   `euclid_desi_dataset/` : Specific management of the Euclid + DESI dataset. TODO refactor this
-    *   **`astroclip/`** : AstroCLIP Model (Contrastive Learning).
-        *   `finetune_image_encoder.py` : Image encoder fine-tuning script.
-        *   `core/` : Fundamental modules (`astroclip.py`, `specformer.py`, `modules.py`).
+```python
+from fmb.paths import load_paths
 
-*   **`data/`** : Model-specific data loading utilities.
-    *   `astroclip_loader.py` : Loading from local Arrow cache.
-    *   `astroclip_parquet.py` : Loading from Parquet files.
-    *   `load_display_data_hsc.py` : (Inherited) Loader for HSC data, used to test AION.
+paths = load_paths()
+# Access standardized paths:
+# paths.dataset, paths.embeddings, paths.outliers, etc.
+```
 
-### `slurm/` (Deployment)
+This ensures consistency across all scripts and environments.
 
-Contains bash scripts for submitting jobs to the cluster (via `sbatch`). These scripts are organized around the major calculation steps of the pipeline:
+### 2. Unified CLI as Dispatcher
 
-1.  **`01_retrain/`** : Scripts to retrain or fine-tune foundation models.
-2.  **`02_embeddings/`** : Scripts to generate embeddings from the trained models.
-3.  **`03_detection/`** : Scripts to run anomaly detection algorithms on the embeddings.
-4.  **`04_analysis/`** : Scripts to predict physical parameters or visualize results.
+The CLI (`src/fmb/cli.py`) is a **thin wrapper** that dispatches to standalone scripts:
 
-### Debugging & Execution Philosophy
+```python
+# CLI command:
+fmb retrain astropt --config configs/retrain/astropt.yaml
 
-*   **Ease of Debugging**: Every part of the code is designed to be easily runnable from a terminal.
-*   **Direct Execution**: You can run any script directly using python (e.g., `python src/fmb/models/astropt/retrain.py ...`).
-*   **CLI Entrypoint**: The `fmb-cli` (or `python -m fmb.cli`) serves **only** as a convenient wrapper to launch these scripts using python. It does not contain heavy logic itself but dispatch execution to the appropriate module. This ensures consistency between local execution, debugging, and SLURM usage.
+# Calls:
+from fmb.models.astropt.retrain import main
+main()
+```
 
-### `external/`
+### 3. Foundation Models Integration
 
-Contains cloned or integrated external dependencies that are not part of the active code maintained in `fmb`, but are necessary for operation (e.g., original `astroPT` for reference or legacy imports).
+**`external/` vs `src/fmb/models/`:**
 
-### Difference between `external/` and `src/fmb/models/`
+- **`external/`**: Original upstream repositories (submodules), unchanged
+- **`src/fmb/models/`**: FMB-specific adaptations and training scripts
 
-*   **`external/`** contains the **original** upstream codebases (submodules). It is used as a reference or library source but its code is not meant to be modified for FMB specifics.
-*   **`src/fmb/models/`** contains the **FMB-specific adaptations** of these models. This is where we implement custom training loops, specific data loading logic for FMB datasets, and architectural adjustments required for our benchmarks. For example, `src/fmb/models/astropt/retrain_spectra_images.py` imports core model classes from `external/astroPT` but implements a custom multimodal training strategy.
+Example: `src/fmb/models/astropt/retrain.py` imports core AstroPT classes from `external/astroPT/` but implements custom training loops for Euclid+DESI data.
 
-## Standard Workflow
+### 4. Modular Pipeline Stages
 
-1.  **Development** : Code is modified in `src/fmb`.
-2.  **Local Testing** : Launch via `python -m fmb.cli ...` or directly the module `python -m fmb.models.astroclip.finetune_image_encoder ...`.
-3.  **Deployment** : Use scripts in `slurm/` which configure the environment and launch the final Python commands on compute nodes.
+```
+Stage 0: Setup          → data index, download weights
+Stage 1: Retrain        → lightweight model adaptation
+Stage 2: Embed          → extract embeddings
+Stage 3: Detect         → anomaly detection (NFS, fusion)
+Stage 4: Analyze        → correlations, similarity, regression
+Stage 5: Visualize      → publication-ready plots
+```
+
+Each stage is independent and can be run separately.
+
+### 5. Configuration Hierarchy
+
+1. **Template configs** (`src/fmb/configs/*.template.yaml`) - Version controlled
+2. **Local configs** (`src/fmb/configs/*_local.yaml`) - Gitignored, user-specific
+3. **Task configs** (`configs/*/`) - Task-specific parameters, but pushed as template
+4. **CLI arguments** - Runtime overrides
+
+Priority: CLI args > Task configs > Local configs > Template defaults
+
+## Key Modules
+
+### `cli.py`
+- Entry point: `fmb <command> <subcommand> [options]`
+- Typer-based command structure
+- Provides `--slurm` flag for cluster submission
+
+### `paths.py`
+- `FMBPaths` dataclass with all standardized paths
+- `load_paths()` function with config resolution
+- Ensures directories exist on first access
+
+### `detection/run.py`
+- Main anomaly detection via Normalizing Flows
+- Processes embeddings per modality (image, spectrum)
+- Outputs anomaly scores to CSV
+
+### `detection/multimodal.py`
+- Fuses per-modality scores with cross-modal alignment
+- Implements geometric mean, minimum, average fusion
+- Exports top-k anomalies per model
+
+### `analysis/outliers.py`
+- Spearman correlations between model rankings
+- Jaccard indices for top-k overlap
+- Disagreement analysis
+
+### `viz/` modules
+- `plot_paper_combined_umap.py`: Multi-model UMAP
+- `outliers/plot_paper_advanced_analysis.py`: Correlation heatmaps
+- `outliers/plot_paper_outlier_grid.py`: Anomaly gallery
+- `similarity.py`: Nearest neighbor visualization
+
+## Execution Modes
+
+### Local Development
+```bash
+# Direct module execution
+python -m fmb.models.astropt.retrain --config configs/retrain/astropt.yaml
+
+# Or via CLI
+fmb retrain astropt --config configs/retrain/astropt.yaml
+```
+
+### HPC/SLURM
+```bash
+# Via CLI
+fmb retrain astropt --slurm
+
+# Or direct sbatch
+sbatch slurm/01_retrain/astropt.sbatch
+```
+
+## Testing
+
+```bash
+python -m unittest discover tests
+```
+
+Tests cover:
+- Path resolution
+- Data loading
+- Config parsing
+- Core utilities
+
+## Adding New Components
+
+### New Model
+1. Add implementation to `src/fmb/models/<model_name>/`
+2. Create config in `configs/retrain/<model_name>.yaml`
+3. Register in `cli.py` under `retrain` command
+4. Add tests in `tests/test_models.py`
+
+### New Analysis
+1. Add script to `src/fmb/analysis/<task_name>/`
+2. Create config in `configs/analysis/<task_name>.yaml`
+3. Register in `cli.py` under `analyze` command
+4. Document in `CLI_COMMANDS.md`
+
+### New Visualization
+1. Add script to `src/fmb/viz/`
+2. Use `fmb.viz.style.apply_style()` for consistency
+3. Register in `cli.py` under `viz` command
+4. Save to `paths.analysis` by default

@@ -22,6 +22,6 @@ source .venv/bin/activate
 python3 --version
 
 # Generate embeddings via CLI
-python -m fmb.cli embed aion --split all
+python -m fmb.cli embed aion --config configs/embeddings/aion.yaml
 
 echo "Finished at $(date)"
