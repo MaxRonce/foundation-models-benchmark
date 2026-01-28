@@ -1,0 +1,59 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, dev, refactor/** ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Don't fail the workflow if tests fail
+    
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive  # Include AION, AstroCLIP, astroPT submodules
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libhdf5-dev
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov
+        
+        # Install package in editable mode
+        if [ -f pyproject.toml ]; then
+          pip install -e .
+        fi
+        
+        # Install test requirements if they exist
+        if [ -f requirements-test.txt ]; then
+          pip install -r requirements-test.txt
+        elif [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+    
+    - name: Run tests
+      continue-on-error: true  # Don't fail even if tests fail
+      run: |
+        pytest tests/ -v --tb=short --continue-on-collection-errors || true
+    
+    - name: Test summary
+      if: always()
+      run: echo "Tests completed (failures are reported but don't block the workflow)"
