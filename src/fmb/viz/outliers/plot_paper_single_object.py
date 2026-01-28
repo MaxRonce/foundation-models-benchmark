@@ -3,84 +3,71 @@ Script to generate a publication-ready single object visualization.
 Displays a single row with:
 [Spectrum (Restframe)] [VIS band] [NISP-Y band] [NISP-J band] [NISP-H band]
 
-Usage:
-    python -m scratch.plot_paper_single_object --object-id <ID> --index euclid_index.csv --save object_viz.pdf
+Refactored for FMB CLI Integration.
 """
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from scipy.ndimage import gaussian_filter1d
 
-from scratch.load_display_data import EuclidDESIDataset
-from scratch.display_outlier_images_spectrum import extract_spectrum, REST_LINES
-from scratch.show_object_detail import load_index
+from fmb.paths import load_paths
+from fmb.data.load_display_data import EuclidDESIDataset
+from fmb.viz.utils import load_index, prepare_rgb_image
+from fmb.viz.spectrum import extract_spectrum, LATEX_REST_LINES
+from fmb.viz.style import apply_style
 
-# --- Publication Style Settings ---
-try:
-    plt.rcParams.update({
-        "text.usetex": True,
-        "font.family": "serif",
-        "font.serif": ["Computer Modern Roman"],
-    })
-except Exception:
-    plt.rcParams.update({
-        "text.usetex": False,
-        "mathtext.fontset": "stix",
-        "font.family": "STIXGeneral",
-    })
-
-plt.rcParams.update({
-    "font.size": 10,
-    "axes.labelsize": 10,
-    "axes.titlesize": 12,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "legend.fontsize": 8,
-    "axes.linewidth": 1.0,
-    "xtick.direction": "in",
-    "ytick.direction": "in",
-    "savefig.bbox": "tight",
-    "savefig.pad_inches": 0.05,
-})
-
-LATEX_REST_LINES = {
-    r"Ly$\alpha$": 1216.0,
-    "C IV": 1549.0,
-    "C III]": 1909.0,
-    "Mg II": 2798.0,
-    "[O II]": 3727.0,
-    "[Ne III]": 3869.0,
-    r"H$\delta$": 4102.0,
-    r"H$\gamma$": 4341.0,
-    r"H$\beta$": 4861.0,
-    "[O III]": 4959.0,
-    "[O III]": 5007.0,
-    "[N II]": 6548.0,
-    r"H$\alpha$": 6563.0,
-    "[N II]": 6584.0,
-    "[S II]": 6717.0,
-    "[S II]": 6731.0,
-}
-
-def get_sample(object_id: str, index_path: str, cache_dir: str) -> dict:
-    index_map = load_index(Path(index_path))
-    if object_id not in index_map:
-        raise ValueError(f"Object ID {object_id} not found in index {index_path}")
+def get_sample_by_id(object_id: str, index_path: Optional[Path], cache_dir: str, verbose: bool = True) -> dict:
+    if index_path and index_path.exists():
+        index_map = load_index(index_path)
+        if object_id in index_map:
+            split, idx = index_map[object_id]
+            # Use offset logic if needed? load_display_data handles dataset loading.
+            # We just load the specific sample.
+            # Ideally we reuse valid offsets, but simply loading dataset and using generic access is safest.
+            dataset = EuclidDESIDataset(split=split, cache_dir=cache_dir, verbose=verbose)
+            
+            # Since index might be global/unsafe, checking ID is better, 
+            # but EuclidDESIDataset doesn't support ID lookup.
+            # We blindly trust index for now, but handle IndexError
+            try:
+                # Correct index if strictly sequential? 
+                # See my previous logic in utils.py.
+                # Here we will assume the index in index_map is usable or relative.
+                # If it fails, we fail.
+                sample = dataset[int(idx)]
+                return sample
+            except IndexError:
+                # Fallback: scan whole split
+                if verbose: print(f"Index {idx} invalid, scanning split '{split}'...")
+                for s in dataset:
+                    if str(s.get("object_id") or "") == object_id:
+                        return s
+                raise ValueError(f"Object {object_id} not found in split {split}")
     
-    split, idx = index_map[object_id]
-    dataset = EuclidDESIDataset(split=split, cache_dir=cache_dir, verbose=True)
-    return dataset[int(idx)]
+    # Fallback if no index: scan both splits
+    if verbose: print("No index provided or object not found. Scanning 'train' and 'test'...")
+    for split in ["train", "test"]:
+        try:
+            ds = EuclidDESIDataset(split=split, cache_dir=cache_dir, verbose=False)
+            for s in ds:
+                if str(s.get("object_id") or "") == object_id:
+                    return s
+        except Exception:
+            pass
+            
+    raise ValueError(f"Object {object_id} not found in dataset.")
 
 def plot_spectrum(ax: plt.Axes, sample: dict, smooth_sigma: float = 2.0):
     wavelength, flux = extract_spectrum(sample)
     redshift = sample.get("redshift", 0.0)
     
     if hasattr(redshift, "item"): redshift = redshift.item()
+    if redshift is None or np.isnan(redshift): redshift = 0.0
     
     if flux is None or wavelength is None:
         ax.text(0.5, 0.5, "No Spectrum", ha="center", va="center", transform=ax.transAxes)
@@ -124,9 +111,6 @@ def plot_band(ax: plt.Axes, image_data, title: str):
     if isinstance(image_data, torch.Tensor):
         image_data = image_data.detach().cpu().numpy()
     
-    # Normalize for display
-    # Use arcsinh or similar for better contrast? 
-    # Let's use simple percentile clipping for paper look
     im = np.nan_to_num(image_data)
     v_min = np.percentile(im, 1)
     v_max = np.percentile(im, 99.5)
@@ -141,18 +125,31 @@ def plot_band(ax: plt.Axes, image_data, title: str):
         spine.set_linewidth(1.0)
         spine.set_color("black")
 
-def main():
-    parser = argparse.ArgumentParser(description="Paper-ready single object visualization")
-    parser.add_argument("--object-id", required=True, help="ID of the object to plot")
-    parser.add_argument("--index", required=True, help="Path to index CSV")
-    parser.add_argument("--cache-dir", default="/n03data/ronceray/datasets", help="Data cache directory")
-    parser.add_argument("--save", default="object_viz.pdf", help="Output filename")
-    parser.add_argument("--smooth", type=float, default=2.0, help="Smoothing for spectrum")
-    parser.add_argument("--dpi", type=int, default=300, help="DPI for saving")
-    args = parser.parse_args()
-
-    print(f"Loading object {args.object_id}...")
-    sample = get_sample(args.object_id, args.index, args.cache_dir)
+def run_single_object_plot(
+    object_id: str,
+    index_path: Union[str, Path, None] = None,
+    cache_dir: Union[str, Path, None] = None,
+    save_path: Union[str, Path, None] = None,
+    smooth: float = 2.0,
+    dpi: int = 300
+):
+    apply_style()
+    paths = load_paths()
+    if not cache_dir:
+        cache_dir = paths.dataset
+    
+    if index_path is None:
+        index_path = paths.dataset_index
+        
+    if save_path is None:
+        out_dir = paths.analysis / "objects"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        save_path = out_dir / f"object_{object_id}.png"
+    
+    print(f"Loading object {object_id}...")
+    # Ensure index path is resolved to Path if it exists
+    idx_p = Path(index_path) if index_path else None
+    sample = get_sample_by_id(object_id, idx_p, str(cache_dir))
     
     # 5 panels: Spectrum, VIS, Y, J, H
     fig = plt.figure(figsize=(15, 3))
@@ -161,7 +158,7 @@ def main():
 
     # 1. Spectrum
     ax_spec = fig.add_subplot(gs[0])
-    plot_spectrum(ax_spec, sample, args.smooth)
+    plot_spectrum(ax_spec, sample, smooth)
     
     # 2. VIS
     ax_vis = fig.add_subplot(gs[1])
@@ -179,15 +176,36 @@ def main():
     ax_h = fig.add_subplot(gs[4])
     plot_band(ax_h, sample.get("nisp_h_image"), "H")
     
-    # Global title? User asked for "object visualization"
     z = sample.get("redshift", 0.0)
     if hasattr(z, "item"): z = z.item()
-    fig.suptitle(f"Object {args.object_id} ($z = {z:.3f}$)", fontsize=14, y=1.05)
+    if z is None or np.isnan(z): z = 0.0
+    
+    fig.suptitle(f"Object {object_id} ($z = {z:.3f}$)", fontsize=14, y=1.05)
     
     plt.tight_layout()
-    Path(args.save).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.save, dpi=args.dpi, bbox_inches="tight")
-    print(f"Saved figure to {args.save}")
+    sp = Path(save_path)
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(sp, dpi=dpi, bbox_inches="tight")
+    print(f"Saved figure to {sp}")
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Paper-ready single object visualization")
+    parser.add_argument("--object-id", required=True, help="ID of the object to plot")
+    parser.add_argument("--index", default=None, help="Path to index CSV")
+    parser.add_argument("--cache-dir", default=None, help="Data cache directory")
+    parser.add_argument("--save", default="object_viz.pdf", help="Output filename")
+    parser.add_argument("--smooth", type=float, default=2.0, help="Smoothing for spectrum")
+    parser.add_argument("--dpi", type=int, default=300, help="DPI for saving")
+    args = parser.parse_args(argv)
+
+    run_single_object_plot(
+        object_id=args.object_id,
+        index_path=args.index,
+        cache_dir=args.cache_dir,
+        save_path=args.save,
+        smooth=args.smooth,
+        dpi=args.dpi
+    )
 
 if __name__ == "__main__":
     main()

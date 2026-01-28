@@ -3,104 +3,133 @@ Script to create a CSV index of the dataset.
 It maps object IDs to their split (train/test) and index within the dataset.
 This is useful for quick lookups and ensuring consistent ordering.
 
-Usage:
-    python -m scratch.index_dataset --output euclid_index.csv --splits all
+Refactored for FMB CLI Integration.
 """
 import argparse
 import csv
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Optional, List
 
 from datasets import get_dataset_split_names, load_dataset, load_from_disk
 from tqdm import tqdm
 
-# Chemin local où se trouvent les deux dossiers train/test téléchargés
-DEFAULT_CACHE = "/n03data/ronceray/datasets"
-HF_DATASET_ID = "msiudek/astroPT_euclid_Q1_desi_dr1_dataset"
+from fmb.paths import load_paths
+
+# Mapping for local directories if available
 LOCAL_SPLITS = {
     "train": "msiudek__astroPT_euclid_Q1_desi_dr1_dataset__train",
     "test": "msiudek__astroPT_euclid_Q1_desi_dr1_dataset__test",
 }
+# Default HF ID if not in config (though paths.py handles this)
+DEFAULT_HF_ID = "msiudek/astroPT_euclid_Q1_desi_dr1_dataset"
 
 
-def index_dataset(cache_dir: str, splits: Sequence[str], output: Path, overwrite: bool) -> None:
+def run_indexing(
+    cache_dir: Optional[str] = None,
+    splits: Sequence[str] = ("all",),
+    output: Optional[Path] = None,
+    overwrite: bool = False,
+    hf_dataset_id: Optional[str] = None
+) -> None:
+    """
+    Main entry point for indexing the dataset.
+    """
+    paths = load_paths()
+    
+    # Defaults
+    if cache_dir is None:
+        cache_dir = str(paths.dataset)
+    if output is None:
+        output = paths.dataset_index
+    if hf_dataset_id is None:
+        hf_dataset_id = paths.dataset_hf_id
+
     if output.exists() and not overwrite:
-        raise SystemExit(f"Output file {output} already exists. Use --overwrite to replace it.")
+        print(f"Index file {output} already exists. Use --overwrite to replace it.")
+        return
 
+    # Determine splits
+    final_splits: List[str] = []
+    
+    # Check if "all" is requested
+    if "all" in [s.lower() for s in splits]:
+        # Priority to local directories in cache_dir
+        local_found = []
+        for s_name, local_name in LOCAL_SPLITS.items():
+            if (Path(cache_dir) / local_name).is_dir():
+                local_found.append(s_name)
+        
+        if local_found:
+            final_splits = local_found
+            print(f"Found local splits: {final_splits}")
+        else:
+            try:
+                final_splits = get_dataset_split_names(hf_dataset_id)
+                print(f"Found remote splits: {final_splits}")
+            except Exception as e:
+                print(f"Error fetching splits from HF: {e}")
+                raise
+    else:
+        final_splits = list(splits)
+
+    if not final_splits:
+        raise ValueError("No splits found or provided.")
+
+    # Helper to load
     def _load_split(split_name: str):
+        # Try local first
         local_dir = LOCAL_SPLITS.get(split_name)
         if local_dir:
             path = Path(cache_dir) / local_dir
             if path.is_dir():
                 print(f"  Loading split '{split_name}' from local directory: {path}")
                 return load_from_disk(str(path))
-        print(f"  Loading split '{split_name}' from HF dataset {HF_DATASET_ID}")
-        return load_dataset(HF_DATASET_ID, split=split_name, cache_dir=cache_dir)
+        
+        print(f"  Loading split '{split_name}' from HF dataset {hf_dataset_id}")
+        return load_dataset(hf_dataset_id, split=split_name, cache_dir=cache_dir)
 
+    # Write Index
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="") as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(["object_id", "split", "index"])
 
-        for split in splits:
+        for split in final_splits:
             print(f"Indexing split '{split}'...")
             ds = _load_split(split)
-            progress = tqdm(ds, desc=f"{split}", unit="sample")
-            for idx, sample in enumerate(progress):
+            # Use 'targetid' or 'object_id'
+            # Euclid dataset often uses 'object_id', older versions might use 'targetid'
+            # We check first sample to be efficient? No, iterate all.
+            
+            count = 0
+            for idx, sample in enumerate(tqdm(ds, desc=f"{split}", unit="sample")):
                 oid = sample.get("object_id") or sample.get("targetid")
-                if oid is None:
-                    continue
-                writer.writerow([oid, split, idx])
-            progress.close()
-            print(f"  Recorded {len(ds)} entries for split '{split}'.")
+                if oid is not None:
+                    writer.writerow([oid, split, idx])
+                    count += 1
+            
+            print(f"  Recorded {count} entries for split '{split}'.")
 
     print(f"Index written to {output}")
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Precompute object_id to split/index mapping for Euclid dataset")
-    parser.add_argument(
-        "--cache-dir",
-        default=DEFAULT_CACHE,
-        help="Dataset cache directory",
-    )
-    parser.add_argument(
-        "--splits",
-        default="all",
-        help="Comma-separated list of splits or 'all' (default)",
-    )
-    parser.add_argument(
-        "--output",
-        required=True,
-        help="Path to output CSV",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing output file",
-    )
-
+    parser = argparse.ArgumentParser(description="Precompute object_id mapping")
+    parser.add_argument("--cache-dir", default=None, help="Dataset cache directory")
+    parser.add_argument("--splits", default="all", help="Comma-separated splits")
+    parser.add_argument("--output", default=None, help="Path to output CSV")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing file")
+    
     args = parser.parse_args(argv)
 
-    if args.splits.strip().lower() == "all":
-        # Priorité aux splits disponibles localement, sinon on récupère ceux du Hub
-        local_splits = [s for s, p in LOCAL_SPLITS.items() if (Path(args.cache_dir) / p).is_dir()]
-        if local_splits:
-            splits = local_splits
-        else:
-            splits = get_dataset_split_names(HF_DATASET_ID)
-    else:
-        splits = [s.strip() for s in args.splits.split(",") if s.strip()]
-        if not splits:
-            raise SystemExit("No valid splits provided")
-
-    index_dataset(
+    splits_list = [s.strip() for s in args.splits.split(",") if s.strip()]
+    
+    run_indexing(
         cache_dir=args.cache_dir,
-        splits=splits,
-        output=Path(args.output),
-        overwrite=args.overwrite,
+        splits=splits_list,
+        output=Path(args.output) if args.output else None,
+        overwrite=args.overwrite
     )
-
 
 if __name__ == "__main__":
     main()

@@ -128,6 +128,30 @@ def embed(
 
 
 
+
+# --- Data Commands ---
+data_app = typer.Typer(help="Stage 00: Data Setup & Indexing")
+app.add_typer(data_app, name="data")
+
+@data_app.command()
+def index(
+    ctx: typer.Context,
+    cache_dir: Optional[str] = typer.Option(None, "--cache-dir", help="Dataset cache directory"),
+    splits: str = typer.Option("all", "--splits", help="Comma-separated splits"),
+    output: Optional[str] = typer.Option(None, "--output", help="Path to output CSV"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing file"),
+):
+    """Create a CSV index of the dataset (object_id -> split/index)."""
+    from fmb.data.index_dataset import run_indexing
+    
+    run_indexing(
+        cache_dir=cache_dir,
+        splits=[s.strip() for s in splits.split(",") if s.strip()],
+        output=Path(output) if output else None,
+        overwrite=overwrite
+    )
+
+
 # --- Detect Commands ---
 detect_app = typer.Typer(help="Stage 03: Detect anomalies using embeddings.")
 app.add_typer(detect_app, name="detect")
@@ -606,6 +630,98 @@ def paper_umap(
     forward_args(ctx)
     from fmb.viz.plot_paper_combined_umap import main as run_task
     run_task()
+
+@viz_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def advanced_analysis(
+    ctx: typer.Context,
+    aion_scores: Optional[str] = typer.Option(None, "--aion-scores", help="Path to AION scores CSV"),
+    astropt_scores: Optional[str] = typer.Option(None, "--astropt-scores", help="Path to AstroPT scores CSV"),
+    astroclip_scores: Optional[str] = typer.Option(None, "--astroclip-scores", help="Path to AstroCLIP scores CSV"),
+    save_prefix: Optional[str] = typer.Option(None, "--save-prefix", help="Prefix for output files"),
+    slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job instead of running locally")
+):
+    """
+    Generate Advanced Analysis figures (Spearman, Jaccard, Disagreements).
+    """
+    if slurm:
+        typer.echo("Slurm not configured for advanced-analysis yet.")
+        return
+
+    typer.echo("Running Advanced Analysis...")
+    from fmb.viz.outliers.plot_paper_advanced_analysis import run_analysis
+    
+    run_analysis(
+        aion_scores=aion_scores,
+        astropt_scores=astropt_scores,
+        astroclip_scores=astroclip_scores,
+        save_prefix=save_prefix
+    )
+
+@viz_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def outlier_grid(
+    ctx: typer.Context,
+    csv: List[str] = typer.Option(..., "--csv", help="CSV file(s) with object_id column"),
+    split: str = typer.Option("all", "--split", help="Dataset split(s)"),
+    cache_dir: Optional[str] = typer.Option(None, "--cache-dir", help="Data cache directory"),
+    max_count: int = typer.Option(12, "--max", help="Maximum number of images to display"),
+    cols: int = typer.Option(3, "--cols", help="Number of columns"),
+    save: Optional[str] = typer.Option(None, "--save", help="Path to save the figure (default: analysis/outliers_grid.png)"),
+    show: bool = typer.Option(False, "--show/--no-show", help="Enable/Disable interactive display"),
+    index: Optional[str] = typer.Option(None, "--index", help="Optional CSV mapping object_id -> split/index"),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
+    slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job")
+):
+    """
+    Generate Publication Outlier Grid (Images + Spectra).
+    """
+    if slurm:
+        typer.echo("Slurm not configured for outlier-grid yet.")
+        return
+
+    typer.echo("Generating Outlier Grid...")
+    from fmb.viz.outliers.plot_paper_outlier_grid import run_grid_plot
+    
+    run_grid_plot(
+        csv_paths=csv,
+        split=split,
+        cache_dir=cache_dir,
+        max_count=max_count,
+        cols=cols,
+        save_path=save,
+        show=show,
+        index_path=index,
+        verbose=verbose
+    )
+
+@viz_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def single_object(
+    ctx: typer.Context,
+    object_id: str = typer.Option(..., "--object-id", help="ID of the object to plot"),
+    index: Optional[str] = typer.Option(None, "--index", help="Path to index CSV"),
+    cache_dir: Optional[str] = typer.Option(None, "--cache-dir", help="Data cache directory"),
+    save: Optional[str] = typer.Option(None, "--save", help="Output filename (default: analysis/object_{id}.pdf)"),
+    smooth: float = typer.Option(2.0, "--smooth", help="Smoothing for spectrum"),
+    dpi: int = typer.Option(300, "--dpi", help="DPI for saving"),
+    slurm: bool = typer.Option(False, "--slurm", help="Submit as a Slurm job")
+):
+    """
+    Generate Single Object Visualization (Spectrum + Bands).
+    """
+    if slurm:
+        typer.echo("Slurm not configured for single-object yet.")
+        return
+
+    typer.echo(f"Plotting Object {object_id}...")
+    from fmb.viz.outliers.plot_paper_single_object import run_single_object_plot
+    
+    run_single_object_plot(
+        object_id=object_id,
+        index_path=index,
+        cache_dir=cache_dir,
+        save_path=save,
+        smooth=smooth,
+        dpi=dpi
+    )
 
 
 if __name__ == "__main__":

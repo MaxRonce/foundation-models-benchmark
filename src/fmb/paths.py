@@ -25,6 +25,7 @@ class FMBPaths:
     dataset_train: Path
     dataset_test: Path
     dataset_hf_id: str
+    dataset_index: Path
     base_weights: Path
 
     
@@ -128,6 +129,7 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
     dataset_path_train = resolve_optional("dataset_path_train", dataset_path / "train")
     dataset_path_test = resolve_optional("dataset_path_test", dataset_path / "test")
     dataset_hf_id = cfg.get("dataset_hf_id", "msiudek/astroPT_euclid_Q1_desi_dr1_dataset")
+    dataset_index = resolve_optional("dataset_index_path", dataset_path / "index.csv")
 
     base_weights_path = resolve("base_weights_path", "checkpoints/base")
     
@@ -156,6 +158,7 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
         dataset_train=dataset_path_train,
         dataset_test=dataset_path_test,
         dataset_hf_id=dataset_hf_id,
+        dataset_index=dataset_index,
         base_weights=base_weights_path,
         base_weights_aion=base_weights_aion,
         base_weights_astropt=base_weights_astropt,
