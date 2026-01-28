@@ -1,0 +1,66 @@
+# FMB Visualization Style Configuration
+
+# General Figure Settings
+figure:
+  titlesize: 28
+  dpi: 300
+  facecolor: "white"
+
+# Font Settings (Robust non-LaTeX defaults)
+font:
+  family: "serif"
+  size: 18
+
+text:
+  usetex: false
+
+mathtext:
+  fontset: "stix"
+
+# Axes Settings
+axes:
+  labelsize: 18
+  titlesize: 24
+  linewidth: 1.0
+  grid: false
+  facecolor: "white"
+  # Colormaps
+  prop_cycle: "cycler('color', ['1f77b4', 'ff7f0e', '2ca02c', 'd62728', '9467bd', '8c564b', 'e377c2', '7f7f7f', 'bcbd22', '17becf'])"
+
+# Tick Settings
+xtick:
+  labelsize: 14
+  direction: "in"
+  major:
+    size: 6
+    width: 1.0
+  minor:
+    size: 3
+    width: 0.8
+    visible: false
+
+ytick:
+  labelsize: 14
+  direction: "in"
+  major:
+    size: 6
+    width: 1.0
+  minor:
+    size: 3
+    width: 0.8
+    visible: false
+
+# Legend Settings
+legend:
+  fontsize: 14
+  frameon: false
+
+# Line Settings
+lines:
+  linewidth: 1.0
+
+# Savefig Settings
+savefig:
+  bbox: "tight"
+  pad_inches: 0.05
+  dpi: 300

@@ -1,0 +1,23 @@
+# Displacement Analysis Configuration
+
+# Type of analysis to run
+# Options: "all", "multi_model", "cross_modality", "extensive"
+plot_type: "all"
+
+# Output directory (relative to project root if not absolute)
+output_dir: "runs/analysis/displacement"
+
+# Input paths (optional overrides)
+# If not specified, will try to auto-detect "anomaly_scores_*.csv" in runs/outliers
+# aion_scores: "runs/outliers/anomaly_scores_aion.csv"
+# astropt_scores: "runs/outliers/anomaly_scores_astropt.csv"
+# astroclip_scores: "runs/outliers/anomaly_scores_astroclip.csv"
+
+# Models involved
+models:
+  - AION
+  - AstroPT
+  - AstroCLIP
+
+# Visualization settings
+style_config: "src/fmb/configs/viz_style.yaml"
