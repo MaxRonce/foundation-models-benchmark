@@ -6,7 +6,7 @@ Module: fmb.setup.check_environment_aion
 Description: Validate AION environment and dependencies
 """
 
-# Original script comming from https://github.com/mhuertascompany/camels-aion/tree/main and modified 
+# Original script comming from https://github.com/mhuertascompany/camels-aion/tree/main and modified
 # to be used as a test for the fmb package
 """Environment sanity checks AION model loading."""
 
@@ -31,6 +31,7 @@ except ImportError:  # pragma: no cover - should not happen if deps installed
 
 from fmb.paths import load_paths
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -45,7 +46,7 @@ def parse_args() -> argparse.Namespace:
         default="aion-base",
         help="Hugging Face model identifier to load.",
     )
-    
+
     # Default to configured path
     try:
         default_model_dir = load_paths().base_weights_aion
@@ -112,31 +113,32 @@ def check_hf_auth() -> None:
         print(f"          Details: {exc}")
 
 
-def check_aion(model_name: str, model_dir: Path | None, device: str, skip_codecs: bool) -> None:
+def check_aion(
+    model_name: str, model_dir: Path | None, device: str, skip_codecs: bool
+) -> None:
     print("\n== AION Model ==")
     import json
-    from huggingface_hub import hf_hub_download
+
     from aion import AION  # Lazy import to provide clearer error if missing
+    from huggingface_hub import hf_hub_download
 
     if model_dir is not None:
         model = AION.from_pretrained(model_dir)
         repo_id = str(model_dir)
         config = None
-        codec_repo: str | Path = model_dir
     else:
         repo_id = model_name if "/" in model_name else f"polymathic-ai/{model_name}"
         config_path = hf_hub_download(repo_id, "config.json")
         with open(config_path, "r", encoding="utf-8") as fh:
             config = json.load(fh)
         model = AION.from_pretrained(repo_id, config=config)
-        codec_repo = repo_id
     model = model.to(device)
     model.eval()
     print(f"Loaded `{repo_id}` and moved to `{device}`.")
 
     print(f"Loaded `{repo_id}` and moved to `{device}`.")
     print("Model loaded successfully (weights validation passed).")
-    
+
     if not skip_codecs:
         print("Note: Codec verification skipped")
 

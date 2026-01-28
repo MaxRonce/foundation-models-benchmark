@@ -11,7 +11,7 @@ import argparse
 import json
 import math
 import random
-import warnings # Added imports
+import warnings  # Added imports
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -29,16 +29,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.utils as nn_utils
-from torch.cuda.amp import GradScaler, autocast
+import yaml  # Added for config support
+from torch.cuda.amp import autocast
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 # ADAPTED IMPORTS for fmb package structure
 from fmb.data.astroclip_parquet import ParquetDataSource
 from fmb.models.astroclip.core.astroclip import AstroClipModel, CLIPLoss
-from fmb.paths import load_paths # Added paths support
+from fmb.paths import load_paths  # Added paths support
 
-import yaml # Added for config support
 
 def parse_args() -> argparse.Namespace:
     # First pass: Check for config file
@@ -55,29 +55,29 @@ def parse_args() -> argparse.Namespace:
             # Flatten config if needed or map keys to match argparse dests
             # For this script, keys in yaml mostly match dests (e.g. checkpoint, output_path)
             # but dashes in yaml keys are usually handled. Argparse dests usually use underscores.
-            
+
             # Key mapping aliases (YAML key -> Argparse dest)
             key_map = {
                 "learning_rate": "lr",
                 "max_epochs": "epochs",
             }
-            
+
             for key, value in config_dict.items():
                 norm_key = key.replace("-", "_")
                 # Apply mapping alias if exists
                 if norm_key in key_map:
                     norm_key = key_map[norm_key]
                 defaults[norm_key] = value
-                
+
             print(f"Loaded configuration from {known.config}")
         except Exception as e:
             print(f"Error loading config file: {e}")
 
     parser = argparse.ArgumentParser(
         description="Fine-tune AstroCLIP image encoder.",
-        parents=[conf_parser] # Inherit --config arg
+        parents=[conf_parser],  # Inherit --config arg
     )
-    
+
     # Defaults from environment
     paths = load_paths()
 
@@ -85,7 +85,7 @@ def parse_args() -> argparse.Namespace:
         "--parquet-path",
         dest="parquet_paths",
         nargs="+",
-        required=False, # Now optional if provided in config/arrow used
+        required=False,  # Now optional if provided in config/arrow used
         help="Paths to parquet files (hf:// supported). Ignored if --use-arrow is used.",
     )
     parser.add_argument(
@@ -96,7 +96,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cache-dir",
         type=str,
-        default=str(paths.dataset), # Use local data path
+        default=str(paths.dataset),  # Use local data path
         help="Hugging Face cache directory (used with --use-arrow).",
     )
     parser.add_argument(
@@ -116,14 +116,22 @@ def parse_args() -> argparse.Namespace:
         help="Fine-tune the spectrum encoder as well (otherwise it stays frozen).",
     )
     # Removing required=True because they might come from config defaults
-    parser.add_argument("--checkpoint", required=False, help="AstroCLIP Lightning checkpoint.")
-    parser.add_argument("--output-path", required=False, help="Output file for the new encoder weights (.pt).")
+    parser.add_argument(
+        "--checkpoint", required=False, help="AstroCLIP Lightning checkpoint."
+    )
+    parser.add_argument(
+        "--output-path",
+        required=False,
+        help="Output file for the new encoder weights (.pt).",
+    )
     parser.add_argument(
         "--output-ckpt",
         default=None,
         help="Optional path to save a full AstroCLIP Lightning checkpoint with the fine-tuned encoder.",
     )
-    parser.add_argument("--device", default="cuda", help="Training device (cuda or cpu).")
+    parser.add_argument(
+        "--device", default="cuda", help="Training device (cuda or cpu)."
+    )
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--lr", type=float, default=3e-6)
@@ -132,10 +140,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=144)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--val-ratio", type=float, default=0.1, help="Fraction used for validation (0 to disable).")
+    parser.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.1,
+        help="Fraction used for validation (0 to disable).",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--amp", action="store_true", help="Enable AMP training.")
-    parser.add_argument("--disable-augment", action="store_true", help="Disable image augmentations.")
+    parser.add_argument(
+        "--disable-augment", action="store_true", help="Disable image augmentations."
+    )
     parser.add_argument(
         "--spectrum-norm",
         choices=["zscore", "minmax", "none"],
@@ -152,12 +167,42 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Lors du sampling parquet, privilégier les galaxies à haut redshift.",
     )
-    parser.add_argument("--warmup-steps", type=int, default=0, help="Nombre d'itérations de warmup pour le scheduler (0 = 10% des steps).")
-    parser.add_argument("--patience", type=int, default=3, help="Patience pour l'early stopping (epochs).")
-    parser.add_argument("--min-delta", type=float, default=1e-4, help="Amélioration minimale requise pour reset la patience.")
-    parser.add_argument("--grad-clip", type=float, default=1.0, help="Clip des gradients (<=0 pour désactiver).")
-    parser.add_argument("--accumulate-steps", type=int, default=1, help="Nombre d'itérations pour accumuler les gradients.")
-    parser.add_argument("--log-interval", type=int, default=20, help="Intervalle d'affichage des logs (nombre de batchs).")
+    parser.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=0,
+        help="Nombre d'itérations de warmup pour le scheduler (0 = 10% des steps).",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=3,
+        help="Patience pour l'early stopping (epochs).",
+    )
+    parser.add_argument(
+        "--min-delta",
+        type=float,
+        default=1e-4,
+        help="Amélioration minimale requise pour reset la patience.",
+    )
+    parser.add_argument(
+        "--grad-clip",
+        type=float,
+        default=1.0,
+        help="Clip des gradients (<=0 pour désactiver).",
+    )
+    parser.add_argument(
+        "--accumulate-steps",
+        type=int,
+        default=1,
+        help="Nombre d'itérations pour accumuler les gradients.",
+    )
+    parser.add_argument(
+        "--log-interval",
+        type=int,
+        default=20,
+        help="Intervalle d'affichage des logs (nombre de batchs).",
+    )
     parser.add_argument(
         "--unfreeze-backbone-blocks",
         type=int,
@@ -180,7 +225,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Chemin vers un fichier de poids (.pt ou .ckpt) pour reprendre l'entraînement.",
     )
-    
+
     # Handle max_epochs from config file (alias to epochs)
     parser.add_argument("--max-epochs", type=int, default=None, dest="max_epochs_alt")
 
@@ -217,7 +262,7 @@ def load_dataframe(
     split: str = "train",
 ) -> pd.DataFrame:
     """Load dataset from Arrow cache or Parquet files.
-    
+
     Args:
         parquet_paths: Paths to parquet files (ignored if use_arrow=True)
         max_samples: Maximum number of samples to load
@@ -233,10 +278,10 @@ def load_dataframe(
         # Load from local Arrow cache (HuggingFace format)
         # ADAPTED IMPORT
         from fmb.data.astroclip_loader import (
-            load_local_arrow_dataset,
             convert_dataset_to_astroclip_format,
+            load_local_arrow_dataset,
         )
-        
+
         print(f"Loading from Arrow cache: {cache_dir} (split={split})")
         df = load_local_arrow_dataset(
             cache_dir=cache_dir,
@@ -244,15 +289,15 @@ def load_dataframe(
             max_samples=max_samples,
             seed=seed,
         )
-        
+
         # Convert to AstroCLIP format
         df = convert_dataset_to_astroclip_format(df, image_size=image_size)
-        
+
     else:
         # Original parquet loading logic
         if not parquet_paths:
             raise ValueError("Either --use-arrow or --parquet-path must be specified")
-        
+
         frames = []
         for path in parquet_paths:
             ds = ParquetDataSource(
@@ -277,11 +322,13 @@ def load_dataframe(
     for col in required_columns:
         if col not in df.columns:
             raise ValueError(f"Column '{col}' is missing from final DataFrame.")
-    
+
     return df.reset_index(drop=True)
 
 
-def train_val_split(df: pd.DataFrame, val_ratio: float, seed: int) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+def train_val_split(
+    df: pd.DataFrame, val_ratio: float, seed: int
+) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
     if val_ratio <= 0 or len(df) < 2:
         return df, None
 
@@ -364,7 +411,11 @@ class AstroClipFineTuneDataset(Dataset):
             spectrum = torch.stack([flux_tensor, wavelength_tensor], dim=-1)
 
         image_tensor = row["image"]
-        image = image_tensor if isinstance(image_tensor, torch.Tensor) else torch.as_tensor(image_tensor)
+        image = (
+            image_tensor
+            if isinstance(image_tensor, torch.Tensor)
+            else torch.as_tensor(image_tensor)
+        )
         image = image.float()
 
         return {
@@ -382,7 +433,9 @@ def build_dataloader(
     shuffle: bool,
     num_workers: int,
 ) -> DataLoader:
-    dataset = AstroClipFineTuneDataset(df, slice_length, spectrum_norm, include_wavelength)
+    dataset = AstroClipFineTuneDataset(
+        df, slice_length, spectrum_norm, include_wavelength
+    )
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -523,22 +576,25 @@ def export_full_checkpoint(model: AstroClipModel, output_ckpt: Path) -> None:
 def main(args: Optional[argparse.Namespace] = None) -> None:
     parsed = parse_args() if args is None else args
     set_seed(parsed.seed)
-    
+
     # Load paths explicitly in main scope
     paths = load_paths()
-    
+
     # Handle epochs logic from config
     if hasattr(parsed, "max_epochs_alt") and parsed.max_epochs_alt is not None:
-         # If --epochs was not explicit or is default, prefer max_epochs from config
-         # Since default for epochs is 5, we check if it is 5 and max_epochs isn't
-         if parsed.epochs == 5:
-             parsed.epochs = parsed.max_epochs_alt
+        # If --epochs was not explicit or is default, prefer max_epochs from config
+        # Since default for epochs is 5, we check if it is 5 and max_epochs isn't
+        if parsed.epochs == 5:
+            parsed.epochs = parsed.max_epochs_alt
 
-    print(f"Configuration: Epochs={parsed.epochs}, Batch={parsed.batch_size}, LR={parsed.lr}")
+    print(
+        f"Configuration: Epochs={parsed.epochs}, Batch={parsed.batch_size}, LR={parsed.lr}"
+    )
 
     # Ensure output_path is set
     if not parsed.output_path:
         from datetime import datetime
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Use configured retrained_weights path
         default_dir = paths.retrained_weights / "astroclip"
@@ -588,14 +644,17 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
 
     # Define unsafe load context manager
     from contextlib import contextmanager
+
     @contextmanager
     def unsafe_torch_load_context():
         original_load = torch.load
+
         def unsafe_load(*args, **kwargs):
             # Force weights_only to False even if provided as None
             # because PyTorch 2.6 defaults None/missing to True
-            kwargs['weights_only'] = False 
+            kwargs["weights_only"] = False
             return original_load(*args, **kwargs)
+
         torch.load = unsafe_load
         try:
             yield
@@ -605,40 +664,46 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
     # Load initial model
     print(f"Loading AstroCLIP checkpoint from: {parsed.checkpoint}")
     with unsafe_torch_load_context():
-        model = AstroClipModel.load_from_checkpoint(parsed.checkpoint, map_location=device)
-    print(f"Checkpoint loaded successfully")
-    
+        model = AstroClipModel.load_from_checkpoint(
+            parsed.checkpoint, map_location=device
+        )
+    print("Checkpoint loaded successfully")
+
     image_encoder = model.image_encoder.to(device)
     spectrum_encoder = model.spectrum_encoder.to(device)
-    
+
     # Handle resume/warm-start from specific weights
     if parsed.resume_path:
         print(f"Resuming from weights: {parsed.resume_path}")
         with unsafe_torch_load_context():
             resume_payload = torch.load(parsed.resume_path, map_location=device)
-        
+
         # Case 1: Custom .pt format
         if isinstance(resume_payload, dict) and "image_encoder" in resume_payload:
             image_encoder.load_state_dict(resume_payload["image_encoder"])
             if parsed.finetune_spectrum and "spectrum_encoder" in resume_payload:
                 spectrum_encoder.load_state_dict(resume_payload["spectrum_encoder"])
-            
+
             # Restore scale
             if parsed.learnable_scale and "logit_scale" in resume_payload:
                 saved_scale = resume_payload["logit_scale"]
                 if isinstance(model.logit_scale, torch.nn.Parameter):
                     with torch.no_grad():
-                         model.logit_scale.data.copy_(saved_scale if isinstance(saved_scale, torch.Tensor) else torch.tensor(saved_scale))
+                        model.logit_scale.data.copy_(
+                            saved_scale
+                            if isinstance(saved_scale, torch.Tensor)
+                            else torch.tensor(saved_scale)
+                        )
             print("Weights loaded from .pt format")
-            
+
         # Case 2: Lightning checkpoint (.ckpt)
         elif isinstance(resume_payload, dict) and "state_dict" in resume_payload:
             model.load_state_dict(resume_payload["state_dict"], strict=False)
             print("Weights loaded from Lightning .ckpt format")
-            
+
         else:
             print(f"Warning: Format unrecognized for {parsed.resume_path}")
-    
+
     # Handle Spectrum Encoder training
     if parsed.finetune_spectrum:
         spectrum_encoder.train()
@@ -656,17 +721,26 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
     # Setup parameters to optimize
     trainable_params = list([p for p in image_encoder.parameters() if p.requires_grad])
     if parsed.finetune_spectrum:
-        trainable_params.extend([p for p in spectrum_encoder.parameters() if p.requires_grad])
-    
+        trainable_params.extend(
+            [p for p in spectrum_encoder.parameters() if p.requires_grad]
+        )
+
     # Handle logit scale (temperature)
     if parsed.learnable_scale:
         if isinstance(model.logit_scale, torch.Tensor):
             model.logit_scale.requires_grad = True
         else:
             import math
-            initial_val = model.logit_scale if isinstance(model.logit_scale, float) else model.logit_scale.item()
-            model.logit_scale = torch.nn.Parameter(torch.tensor(initial_val, device=device))
-        
+
+            initial_val = (
+                model.logit_scale
+                if isinstance(model.logit_scale, float)
+                else model.logit_scale.item()
+            )
+            model.logit_scale = torch.nn.Parameter(
+                torch.tensor(initial_val, device=device)
+            )
+
         trainable_params.append(model.logit_scale)
         print("Note: CLIP temperature/scale is LEARNABLE.")
     else:
@@ -674,23 +748,25 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
             model.logit_scale.requires_grad = False
         print("Note: CLIP temperature/scale is FIXED.")
 
-    optimizer = torch.optim.AdamW(trainable_params, lr=parsed.lr, weight_decay=parsed.weight_decay)
+    optimizer = torch.optim.AdamW(
+        trainable_params, lr=parsed.lr, weight_decay=parsed.weight_decay
+    )
 
     total_steps = (len(train_loader) * parsed.epochs) // max(1, parsed.accumulate_steps)
     warmup_steps = parsed.warmup_steps or max(1, int(0.1 * total_steps))
     scheduler_factors = _cosine_scheduler(total_steps, warmup_steps)
 
     criterion = CLIPLoss()
-    
+
     def get_current_scale():
         if parsed.learnable_scale:
             return model.logit_scale
         if isinstance(model.logit_scale, torch.Tensor):
-             return model.logit_scale.exp().item()
+            return model.logit_scale.exp().item()
         return math.exp(model.logit_scale)
 
     # Fixed GradScaler for torch > 2.0
-    scaler = torch.amp.GradScaler('cuda', enabled=parsed.amp and device.type == "cuda")
+    scaler = torch.amp.GradScaler("cuda", enabled=parsed.amp and device.type == "cuda")
     history: List[HistoryEntry] = []
 
     best_val_loss = float("inf")
@@ -708,10 +784,14 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
         optimizer.zero_grad(set_to_none=True)
 
         # Added TQDM Progress Bar
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{parsed.epochs}", 
-                    ncols=120, leave=True,
-                    mininterval=0.5,
-                    smoothing=0.1)
+        pbar = tqdm(
+            train_loader,
+            desc=f"Epoch {epoch}/{parsed.epochs}",
+            ncols=120,
+            leave=True,
+            mininterval=0.5,
+            smoothing=0.1,
+        )
 
         for batch_idx, batch in enumerate(pbar, start=1):
             images = batch["image"].to(device, non_blocking=True)
@@ -720,10 +800,10 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
             with autocast(enabled=scaler.is_enabled()):
                 image_features = image_encoder(images)
                 spectrum_features = spectrum_encoder(spectrum)
-                
+
                 current_scale = get_current_scale()
                 loss = criterion(image_features, spectrum_features, current_scale)
-                
+
                 cosine = F.cosine_similarity(
                     F.normalize(image_features, dim=-1),
                     F.normalize(spectrum_features, dim=-1),
@@ -755,18 +835,27 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
 
             # Update progress metrics
             current_loss = loss.item() * parsed.accumulate_steps
-            pbar.set_postfix({
-                'loss': f'{current_loss:.4f}',
-                'cos': f'{cosine.item():.4f}',
-                'lr': f'{optimizer.param_groups[0]["lr"]:.2e}'
-            })
+            pbar.set_postfix(
+                {
+                    "loss": f"{current_loss:.4f}",
+                    "cos": f"{cosine.item():.4f}",
+                    "lr": f'{optimizer.param_groups[0]["lr"]:.2e}',
+                }
+            )
 
         train_loss = cumulative_loss / max(1, sample_count)
         train_cos = cumulative_cosine / max(1, sample_count)
 
         val_metrics = {"loss": None, "cosine": None}
         if val_loader is not None:
-            val_metrics = evaluate(image_encoder, spectrum_encoder, val_loader, criterion, device, get_current_scale())
+            val_metrics = evaluate(
+                image_encoder,
+                spectrum_encoder,
+                val_loader,
+                criterion,
+                device,
+                get_current_scale(),
+            )
 
         history.append(
             HistoryEntry(
@@ -778,21 +867,32 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
             )
         )
 
-        val_loss_for_patience = val_metrics["loss"] if val_metrics["loss"] is not None else train_loss
+        val_loss_for_patience = (
+            val_metrics["loss"] if val_metrics["loss"] is not None else train_loss
+        )
         improved = val_loss_for_patience + parsed.min_delta < best_val_loss
         if improved:
             best_val_loss = val_loss_for_patience
             patience_counter = 0
-            
+
             # Save checkpoints
             checkpoint_payload = {
-                "image_encoder": {k: v.detach().cpu() for k, v in image_encoder.state_dict().items()},
-                "spectrum_encoder": {k: v.detach().cpu() for k, v in spectrum_encoder.state_dict().items()},
+                "image_encoder": {
+                    k: v.detach().cpu() for k, v in image_encoder.state_dict().items()
+                },
+                "spectrum_encoder": {
+                    k: v.detach().cpu()
+                    for k, v in spectrum_encoder.state_dict().items()
+                },
             }
             if parsed.learnable_scale:
-                scale_val = model.logit_scale.detach().cpu() if isinstance(model.logit_scale, torch.Tensor) else model.logit_scale
+                scale_val = (
+                    model.logit_scale.detach().cpu()
+                    if isinstance(model.logit_scale, torch.Tensor)
+                    else model.logit_scale
+                )
                 checkpoint_payload["logit_scale"] = scale_val
-                
+
             torch.save(checkpoint_payload, parsed.output_path)
             print(f"[Epoch {epoch}] New best model saved to {parsed.output_path}")
         else:
@@ -805,7 +905,7 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
     print(f"Reloading best model from {parsed.output_path}...")
     with unsafe_torch_load_context():
         best_payload = torch.load(parsed.output_path, map_location="cpu")
-    
+
     if "image_encoder" in best_payload:
         image_encoder.load_state_dict(best_payload["image_encoder"])
         if parsed.finetune_spectrum and "spectrum_encoder" in best_payload:
@@ -815,15 +915,21 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
 
     if parsed.output_ckpt:
         with unsafe_torch_load_context():
-            export_model = AstroClipModel.load_from_checkpoint(parsed.checkpoint, map_location="cpu")
-        
+            export_model = AstroClipModel.load_from_checkpoint(
+                parsed.checkpoint, map_location="cpu"
+            )
+
         export_model.image_encoder.load_state_dict(image_encoder.state_dict())
         export_model.spectrum_encoder.load_state_dict(spectrum_encoder.state_dict())
-                 
+
         export_full_checkpoint(export_model, Path(parsed.output_ckpt))
         print(f"[OK] Full checkpoint saved to {parsed.output_ckpt}")
 
-    history_path = Path(parsed.history_json) if parsed.history_json else Path(parsed.output_path).with_suffix(".history.json")
+    history_path = (
+        Path(parsed.history_json)
+        if parsed.history_json
+        else Path(parsed.output_path).with_suffix(".history.json")
+    )
     history_payload = [
         {
             "epoch": entry.epoch,
@@ -838,7 +944,11 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
     history_path.write_text(json.dumps(history_payload, indent=2))
     print(f"[OK] History saved to {history_path}")
 
-    plot_path = Path(parsed.history_plot) if parsed.history_plot else Path(parsed.output_path).with_suffix(".history.png")
+    plot_path = (
+        Path(parsed.history_plot)
+        if parsed.history_plot
+        else Path(parsed.output_path).with_suffix(".history.png")
+    )
     _plot_history(history, plot_path)
     print(f"[OK] Training curves saved to {plot_path}")
 

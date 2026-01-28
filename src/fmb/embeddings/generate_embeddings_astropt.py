@@ -10,22 +10,21 @@ Description: Generate embeddings using AstroPT
 Run inference with the trained astroPT multimodal model and export embeddings.
 """
 import argparse
-from pathlib import Path
-from typing import Dict, List, Optional, Any
-import sys
-import yaml
 import os
+import sys
 import warnings
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-# Use fmb.paths
-from fmb.paths import load_paths
+import torch
+import yaml
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 # Imports from local package
 from fmb.data.datasets import AstroPTDataset, FMBDataConfig
-
-import torch
-from torch.utils.data import DataLoader
-from tqdm import tqdm
+# Use fmb.paths
+from fmb.paths import load_paths
 
 # Add external/astroPT/src to path
 astropt_path = Path(__file__).resolve().parents[3] / "external" / "astroPT" / "src"
@@ -34,12 +33,10 @@ if str(astropt_path) not in sys.path:
 
 # Imports from external AstroPT
 try:
-    from astropt.model import GPT, GPTConfig, ModalityRegistry, ModalityConfig
+    from astropt.model import GPT, GPTConfig, ModalityConfig, ModalityRegistry
     # Use internal path for dataloader which was migrated
     from fmb.models.astropt.euclid_desi_dataset.multimodal_dataloader import (
-        multimodal_collate_fn,
-        prepare_multimodal_batch,
-    )
+        multimodal_collate_fn, prepare_multimodal_batch)
 except ImportError as e:
     print(f"Error importing AstroPT components: {e}")
     sys.exit(1)

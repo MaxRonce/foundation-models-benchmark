@@ -12,19 +12,15 @@ from typing import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from tqdm import tqdm
-
 from scratch.display_outlier_images import (
-    load_index,
     collect_samples,
     collect_samples_with_index,
+    load_index,
     prepare_rgb_image,
 )
-from scratch.display_outlier_images_spectrum import (
-    extract_spectrum,
-    REST_LINES,
-)
+from scratch.display_outlier_images_spectrum import REST_LINES, extract_spectrum
 from scratch.load_display_data import EuclidDESIDataset
+from tqdm import tqdm
 
 try:
     import umap
@@ -141,7 +137,9 @@ def add_thumbnails(
                 zorder=3,
             )
         except Exception as exc:  # pragma: no cover
-            print(f"Failed to attach thumbnail for object {sample.get('object_id')}: {exc}")
+            print(
+                f"Failed to attach thumbnail for object {sample.get('object_id')}: {exc}"
+            )
 
 
 def render_spectrum(ax: plt.Axes, sample: dict) -> None:
@@ -160,7 +158,9 @@ def render_spectrum(ax: plt.Axes, sample: dict) -> None:
         if z is not None:
             for name, line_rest in REST_LINES.items():
                 if rest_wave.min() <= line_rest <= rest_wave.max():
-                    ax.axvline(line_rest, color="red", linestyle="--", alpha=0.6, linewidth=0.6)
+                    ax.axvline(
+                        line_rest, color="red", linestyle="--", alpha=0.6, linewidth=0.6
+                    )
                     ymax = ax.get_ylim()[1]
                     ax.text(
                         line_rest,
@@ -171,11 +171,21 @@ def render_spectrum(ax: plt.Axes, sample: dict) -> None:
                         ha="center",
                         fontsize=6,
                         color="black",
-                        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none", pad=1.0),
+                        bbox=dict(
+                            facecolor="white", alpha=0.8, edgecolor="none", pad=1.0
+                        ),
                     )
         ax.set_xlim(rest_wave.min(), rest_wave.max())
     else:
-        ax.text(0.5, 0.5, "No spectrum", ha="center", va="center", fontsize=6, transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No spectrum",
+            ha="center",
+            va="center",
+            fontsize=6,
+            transform=ax.transAxes,
+        )
     ax.set_xticks([])
     ax.set_yticks([])
 
@@ -191,8 +201,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         choices=["embedding_hsc_desi", "embedding_hsc", "embedding_spectrum"],
         help="Embedding field to visualize",
     )
-    parser.add_argument("--figure", required=True, help="Output image path for thumbnails")
-    parser.add_argument("--figure-spectrum", default=None, help="Optional path for spectrum-grid figure")
+    parser.add_argument(
+        "--figure", required=True, help="Output image path for thumbnails"
+    )
+    parser.add_argument(
+        "--figure-spectrum", default=None, help="Optional path for spectrum-grid figure"
+    )
     parser.add_argument(
         "--split",
         type=str,
@@ -204,17 +218,38 @@ def main(argv: Sequence[str] | None = None) -> None:
         type=str,
         default="/n03data/ronceray/datasets",
     )
-    parser.add_argument("--index", type=str, default=None, help="Optional CSV mapping object_id -> split/index")
-    parser.add_argument("--grid-rows", type=int, default=12, help="Number of rows in the thumbnail grid")
-    parser.add_argument("--grid-cols", type=int, default=12, help="Number of columns in the thumbnail grid")
-    parser.add_argument("--random-state", type=int, default=42, help="Random state for UMAP and sampling")
+    parser.add_argument(
+        "--index",
+        type=str,
+        default=None,
+        help="Optional CSV mapping object_id -> split/index",
+    )
+    parser.add_argument(
+        "--grid-rows", type=int, default=12, help="Number of rows in the thumbnail grid"
+    )
+    parser.add_argument(
+        "--grid-cols",
+        type=int,
+        default=12,
+        help="Number of columns in the thumbnail grid",
+    )
+    parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random state for UMAP and sampling",
+    )
     parser.add_argument("--dpi", type=int, default=450, help="Output resolution in DPI")
-    parser.add_argument("--point-size", type=float, default=6.0, help="Scatter point size")
+    parser.add_argument(
+        "--point-size", type=float, default=6.0, help="Scatter point size"
+    )
     parser.add_argument("--alpha", type=float, default=0.35, help="Scatter alpha")
     args = parser.parse_args(argv)
 
     records = load_records(Path(args.input))
-    coords = compute_umap(stack_embeddings(records, args.embedding_key), args.random_state)
+    coords = compute_umap(
+        stack_embeddings(records, args.embedding_key), args.random_state
+    )
 
     object_ids = [_to_str_id(rec.get("object_id", "")) for rec in records]
 
@@ -246,7 +281,14 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     fig, ax = plt.subplots(figsize=(args.grid_cols * 1.5, args.grid_rows * 1.5))
     if np.isnan(redshifts).all():
-        ax.scatter(coords_norm[:, 0] * args.grid_cols, coords_norm[:, 1] * args.grid_rows, s=args.point_size, alpha=args.alpha, color="slateblue", zorder=1)
+        ax.scatter(
+            coords_norm[:, 0] * args.grid_cols,
+            coords_norm[:, 1] * args.grid_rows,
+            s=args.point_size,
+            alpha=args.alpha,
+            color="slateblue",
+            zorder=1,
+        )
     else:
         mask = ~np.isnan(redshifts)
         scatter = ax.scatter(
@@ -294,12 +336,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             retrieved_ids = {_to_str_id(sample.get("object_id")) for sample in samples}
             missing = [oid for oid in thumb_ids if oid not in retrieved_ids]
             if missing:
-                dataset = EuclidDESIDataset(split=args.split, cache_dir=args.cache_dir, verbose=True)
+                dataset = EuclidDESIDataset(
+                    split=args.split, cache_dir=args.cache_dir, verbose=True
+                )
                 samples.extend(collect_samples(dataset, missing, verbose=True))
         else:
-            dataset = EuclidDESIDataset(split=args.split, cache_dir=args.cache_dir, verbose=True)
+            dataset = EuclidDESIDataset(
+                split=args.split, cache_dir=args.cache_dir, verbose=True
+            )
             samples = collect_samples(dataset, thumb_ids, verbose=True)
-        id_to_sample = {_to_str_id(sample.get("object_id")): sample for sample in samples}
+        id_to_sample = {
+            _to_str_id(sample.get("object_id")): sample for sample in samples
+        }
         for oid, cell in zip(thumb_ids, cell_positions):
             sample = id_to_sample.get(oid)
             if sample is not None:
@@ -316,7 +364,10 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.figure_spectrum:
         if ordered_samples:
-            grid_pairs = [(gx, gy, sample) for (gx, gy), sample in zip(cell_positions, ordered_samples)]
+            grid_pairs = [
+                (gx, gy, sample)
+                for (gx, gy), sample in zip(cell_positions, ordered_samples)
+            ]
             fig_spec, axes = plt.subplots(
                 args.grid_rows,
                 args.grid_cols,
@@ -325,7 +376,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 sharey=True,
             )
             axes = np.atleast_2d(axes)
-            for gx, gy, sample in tqdm(grid_pairs, desc="Rendering spectra", unit="spec"):
+            for gx, gy, sample in tqdm(
+                grid_pairs, desc="Rendering spectra", unit="spec"
+            ):
                 ax_spec = axes[gy, gx]
                 render_spectrum(ax_spec, sample)
             for gy in range(args.grid_rows):

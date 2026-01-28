@@ -17,21 +17,23 @@ Usage:
 
 import argparse
 import os
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-from random import sample
 import sys
 import warnings
 
 # Add src to pythonpath FIRST, before any local imports
 from pathlib import Path
+
 src_path = Path(__file__).resolve().parents[2]
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
+from typing import Optional, Sequence
+
 # Matplotlib defaults to interactive; switch to "Agg" if --no-gui is passed
 import matplotlib
 
-from typing import Optional, Sequence
 
 def _maybe_switch_to_agg(no_gui: bool):
     if no_gui:
@@ -43,6 +45,7 @@ def _maybe_switch_to_agg(no_gui: bool):
         except Exception:
             matplotlib.use("Agg")
 
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -53,19 +56,21 @@ except Exception:
     Image = None
 
 try:
-    from datasets import load_dataset, concatenate_datasets, load_from_disk
+    from datasets import concatenate_datasets, load_dataset, load_from_disk
 except ImportError as e:
     raise SystemExit(
         "The 'datasets' package is required. Install it with: pip install datasets"
     ) from e
 
-from torch.utils.data import DataLoader
+
 from fmb.paths import load_paths
 
-HF_DATASET_ID = "msiudek/astroPT_euclid_Q1_desi_dr1_dataset" # Fallback if not in paths, but paths has default
+HF_DATASET_ID = "msiudek/astroPT_euclid_Q1_desi_dr1_dataset"  # Fallback if not in paths, but paths has default
+
 
 class EuclidDESIDataset(torch.utils.data.Dataset):
     """PyTorch Dataset wrapper for the Euclid+DESI HuggingFace dataset."""
+
     def __init__(
         self,
         split="train",
@@ -74,14 +79,15 @@ class EuclidDESIDataset(torch.utils.data.Dataset):
         verbose: bool = False,
     ):
         import os
+
         paths = load_paths()
         if cache_dir is None:
             cache_dir = str(paths.dataset)
-            
+
         os.makedirs(cache_dir, exist_ok=True)
         self.verbose = verbose
         self.transform = transform
-        
+
         self.hf_dataset_id = getattr(paths, "dataset_hf_id", HF_DATASET_ID)
 
         requested_splits: list[str]
@@ -89,18 +95,22 @@ class EuclidDESIDataset(torch.utils.data.Dataset):
 
         local_split_paths = {}
         if paths.dataset_train and paths.dataset_train.exists():
-             local_split_paths["train"] = paths.dataset_train
+            local_split_paths["train"] = paths.dataset_train
         if paths.dataset_test and paths.dataset_test.exists():
-             local_split_paths["test"] = paths.dataset_test
+            local_split_paths["test"] = paths.dataset_test
 
         def _load_split(split_name: str):
             """Load a split from local disk if available, otherwise from HF."""
             if split_name in local_split_paths:
                 if self.verbose:
-                    print(f"Loading split '{split_name}' from {local_split_paths[split_name]}")
+                    print(
+                        f"Loading split '{split_name}' from {local_split_paths[split_name]}"
+                    )
                 return load_from_disk(str(local_split_paths[split_name]))
             if self.verbose:
-                print(f"Loading split '{split_name}' from HF dataset {self.hf_dataset_id}")
+                print(
+                    f"Loading split '{split_name}' from HF dataset {self.hf_dataset_id}"
+                )
             return load_dataset(
                 self.hf_dataset_id,
                 split=split_name,
@@ -112,7 +122,9 @@ class EuclidDESIDataset(torch.utils.data.Dataset):
             if normalized.lower() in {"all", "*"}:
                 requested_splits = list(local_split_paths) or ["train", "test"]
             else:
-                requested_splits = [part.strip() for part in normalized.split(",") if part.strip()]
+                requested_splits = [
+                    part.strip() for part in normalized.split(",") if part.strip()
+                ]
                 if not requested_splits:
                     raise ValueError("No valid split names provided")
             for split_name in requested_splits:
@@ -142,15 +154,14 @@ class EuclidDESIDataset(torch.utils.data.Dataset):
         self.splits = requested_splits
         if self.verbose:
             per_split_sizes = {
-                name: len(ds)
-                for name, ds in zip(self.splits, datasets_to_concat)
+                name: len(ds) for name, ds in zip(self.splits, datasets_to_concat)
             }
             print(
                 f"Loaded EuclidDESIDataset with splits={self.splits} total_samples={len(self.dataset)}"
             )
             print(f"Per-split sizes: {per_split_sizes}")
             preview = [
-                (self.dataset[i].get("object_id") or self.dataset[i].get("targetid")) 
+                (self.dataset[i].get("object_id") or self.dataset[i].get("targetid"))
                 for i in range(min(3, len(self.dataset)))
             ]
             print(f"Object ID preview: {preview}")
@@ -163,14 +174,16 @@ class EuclidDESIDataset(torch.utils.data.Dataset):
         sample = self.dataset[idx]
 
         # Convert PIL image to tensor
-        rgb_image = sample['RGB_image']
+        rgb_image = sample["RGB_image"]
         if Image is not None and isinstance(rgb_image, Image.Image):
             rgb_image = np.array(rgb_image)
 
         # Convert to tensor format (C, H, W)
         if isinstance(rgb_image, np.ndarray):
             if rgb_image.ndim == 3:
-                rgb_image_t = torch.from_numpy(rgb_image).permute(2, 0, 1).float() / 255.0
+                rgb_image_t = (
+                    torch.from_numpy(rgb_image).permute(2, 0, 1).float() / 255.0
+                )
             else:
                 rgb_image_t = torch.from_numpy(rgb_image).unsqueeze(0).float() / 255.0
         else:
@@ -184,56 +197,66 @@ class EuclidDESIDataset(torch.utils.data.Dataset):
 
         # Process spectrum data
         spectrum_data = None
-        if sample.get('spectrum') is not None:
-            flux = sample['spectrum'].get('flux')
-            wavelength = sample['spectrum'].get('wavelength')
-            error = sample['spectrum'].get('error')
+        if sample.get("spectrum") is not None:
+            flux = sample["spectrum"].get("flux")
+            wavelength = sample["spectrum"].get("wavelength")
+            error = sample["spectrum"].get("error")
 
             flux = np.array(flux) if flux is not None else None
             wavelength = np.array(wavelength) if wavelength is not None else None
             error = np.array(error) if error is not None else None
 
-            ivar = 1.0 / (error ** 2) if error is not None else None
+            ivar = 1.0 / (error**2) if error is not None else None
 
             # mask not provided → make a "valid empty" boolean mask
             mask = np.zeros_like(flux, dtype=bool) if flux is not None else None
 
             if flux is not None:
                 spectrum_data = {
-                    'flux': torch.from_numpy(flux).float(),
-                    'wavelength': torch.from_numpy(wavelength).float() if wavelength is not None else None,
-                    'error': torch.from_numpy(error).float() if error is not None else None,
-                    'ivar': torch.from_numpy(ivar).float() if ivar is not None else None,
-                    'mask': torch.from_numpy(mask).bool() if mask is not None else None,
+                    "flux": torch.from_numpy(flux).float(),
+                    "wavelength": (
+                        torch.from_numpy(wavelength).float()
+                        if wavelength is not None
+                        else None
+                    ),
+                    "error": (
+                        torch.from_numpy(error).float() if error is not None else None
+                    ),
+                    "ivar": (
+                        torch.from_numpy(ivar).float() if ivar is not None else None
+                    ),
+                    "mask": torch.from_numpy(mask).bool() if mask is not None else None,
                 }
 
         # Process SED data
         sed_fluxes = None
-        if sample.get('sed_data') is not None:
-            flux_keys = [k for k in sample['sed_data'].keys() if k.startswith('flux_')]
+        if sample.get("sed_data") is not None:
+            flux_keys = [k for k in sample["sed_data"].keys() if k.startswith("flux_")]
             if flux_keys:
-                sed_fluxes = torch.tensor([sample['sed_data'][k] for k in flux_keys]).float()
+                sed_fluxes = torch.tensor(
+                    [sample["sed_data"][k] for k in flux_keys]
+                ).float()
 
         # Individual band images (optional)
         def _to_tensor_img(x):
             return torch.from_numpy(np.array(x)).float() if x is not None else None
 
-        vis_image    = _to_tensor_img(sample.get('VIS_image'))
-        nisp_y_image = _to_tensor_img(sample.get('NISP_Y_image'))
-        nisp_j_image = _to_tensor_img(sample.get('NISP_J_image'))
-        nisp_h_image = _to_tensor_img(sample.get('NISP_H_image'))
+        vis_image = _to_tensor_img(sample.get("VIS_image"))
+        nisp_y_image = _to_tensor_img(sample.get("NISP_Y_image"))
+        nisp_j_image = _to_tensor_img(sample.get("NISP_J_image"))
+        nisp_h_image = _to_tensor_img(sample.get("NISP_H_image"))
 
         return {
-            'object_id': sample.get('object_id') or sample.get('targetid'),
-            'targetid': sample.get('targetid'),
-            'redshift': sample.get('redshift'),
-            'rgb_image': rgb_image_t,
-            'vis_image': vis_image,
-            'nisp_y_image': nisp_y_image,
-            'nisp_j_image': nisp_j_image,
-            'nisp_h_image': nisp_h_image,
-            'spectrum': spectrum_data,
-            'sed_fluxes': sed_fluxes,
+            "object_id": sample.get("object_id") or sample.get("targetid"),
+            "targetid": sample.get("targetid"),
+            "redshift": sample.get("redshift"),
+            "rgb_image": rgb_image_t,
+            "vis_image": vis_image,
+            "nisp_y_image": nisp_y_image,
+            "nisp_j_image": nisp_j_image,
+            "nisp_h_image": nisp_h_image,
+            "spectrum": spectrum_data,
+            "sed_fluxes": sed_fluxes,
         }
 
 
@@ -267,7 +290,7 @@ def display_one_sample(
         fig, ax_rgb = plt.subplots(figsize=(5, 5))
 
     # ----- RGB -----
-    rgb = sample['rgb_image']
+    rgb = sample["rgb_image"]
     if rgb.ndim == 3 and rgb.shape[0] in (1, 3):
         rgb_np = rgb.permute(1, 2, 0).numpy()
         if rgb_np.shape[2] == 1:  # grayscale
@@ -282,10 +305,14 @@ def display_one_sample(
 
     if show_bands:
         # ----- Spectrum (if available) -----
-        spec = sample.get('spectrum')
-        if spec is not None and spec.get('flux') is not None:
-            flux = spec['flux'].numpy()
-            wavelength = spec['wavelength'].numpy() if spec.get('wavelength') is not None else np.arange(len(flux))
+        spec = sample.get("spectrum")
+        if spec is not None and spec.get("flux") is not None:
+            flux = spec["flux"].numpy()
+            wavelength = (
+                spec["wavelength"].numpy()
+                if spec.get("wavelength") is not None
+                else np.arange(len(flux))
+            )
             ax_spec.plot(wavelength, flux, linewidth=0.8)
             ax_spec.set_title("DESI Spectrum")
             ax_spec.set_xlabel("Wavelength (Å)")
@@ -295,7 +322,7 @@ def display_one_sample(
             ax_spec.set_axis_off()
 
         # ----- SED (if available) -----
-        sed = sample.get('sed_fluxes')
+        sed = sample.get("sed_fluxes")
         if sed is not None:
             ax_sed.bar(range(len(sed)), sed.numpy())
             ax_sed.set_title(f"SED ({len(sed)} bands)")
@@ -307,10 +334,10 @@ def display_one_sample(
 
         # ----- Individual bands -----
         for ax, band_tensor, label in [
-            (ax_vis, sample.get('vis_image'), "VIS"),
-            (ax_y, sample.get('nisp_y_image'), "NIR-Y"),
-            (ax_j, sample.get('nisp_j_image'), "NIR-J"),
-            (ax_h, sample.get('nisp_h_image'), "NIR-H"),
+            (ax_vis, sample.get("vis_image"), "VIS"),
+            (ax_y, sample.get("nisp_y_image"), "NIR-Y"),
+            (ax_j, sample.get("nisp_j_image"), "NIR-J"),
+            (ax_h, sample.get("nisp_h_image"), "NIR-H"),
         ]:
             if band_tensor is not None:
                 im = ax.imshow(band_tensor.numpy(), cmap="viridis")
@@ -337,21 +364,42 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(
         description="Load and display a sample from the Euclid+DESI dataset."
     )
-    p.add_argument("--index", type=int, default=0, help="Index of the sample to display (default: 0)")
+    p.add_argument(
+        "--index",
+        type=int,
+        default=0,
+        help="Index of the sample to display (default: 0)",
+    )
     p.add_argument("--split", type=str, default="train", help="HF split to use")
-    
+
     # Default to configured path
     try:
         default_cache = str(load_paths().dataset)
     except Exception:
         default_cache = "./data"
 
-    p.add_argument("--cache-dir", type=str,
-                   default=default_cache,
-                   help="HuggingFace cache directory")
-    p.add_argument("--save", type=str, default=None, help="Save path for the figure (png/jpg, optional)")
-    p.add_argument("--no-gui", action="store_true", help="Do not open a window (save only if --save is provided)")
-    p.add_argument("--show-bands", action="store_true", help="Display spectrum/SED + individual bands if available")
+    p.add_argument(
+        "--cache-dir",
+        type=str,
+        default=default_cache,
+        help="HuggingFace cache directory",
+    )
+    p.add_argument(
+        "--save",
+        type=str,
+        default=None,
+        help="Save path for the figure (png/jpg, optional)",
+    )
+    p.add_argument(
+        "--no-gui",
+        action="store_true",
+        help="Do not open a window (save only if --save is provided)",
+    )
+    p.add_argument(
+        "--show-bands",
+        action="store_true",
+        help="Display spectrum/SED + individual bands if available",
+    )
     return p.parse_args(argv)
 
 

@@ -7,26 +7,31 @@ Description: Centralized path management from config.yaml
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-import datetime as dt
+
 import yaml
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
+
 def _expand_vars(s: str) -> str:
     return os.path.expandvars(os.path.expanduser(s))
+
 
 def _p(v: str | Path) -> Path:
     return Path(_expand_vars(str(v))).resolve()
 
+
 @dataclass(frozen=True)
 class FMBPaths:
     repo_root: Path
-    
+
     # Specific specialized paths
     dataset: Path
     dataset_train: Path
@@ -35,7 +40,6 @@ class FMBPaths:
     dataset_index: Path
     base_weights: Path
 
-    
     # Model specific base weights (can be configured separately)
     base_weights_aion: Path
     base_weights_astropt: Path
@@ -45,21 +49,29 @@ class FMBPaths:
     nfs_weights: Path
     outliers: Path
     analysis: Path
-    
+
     # Kept for backward compat or generic usage if needed
     embeddings: Path
     cache: Path
-    
+
     # Fallback/base roots
     storage_root: Path
     runs_root: Path
-    
+
     def ensure(self) -> "FMBPaths":
         # Create directories that are meant to be output directories
         # dataset and base_weights are input dirs usually, so we might not want to mkdir them blindly?
         # But if they are just roots, it's safer to ensure they exist or warn.
         # Let's ensure output dirs.
-        for p in [self.retrained_weights, self.nfs_weights, self.outliers, self.analysis, self.embeddings, self.cache, self.runs_root]:
+        for p in [
+            self.retrained_weights,
+            self.nfs_weights,
+            self.outliers,
+            self.analysis,
+            self.embeddings,
+            self.cache,
+            self.runs_root,
+        ]:
             p.mkdir(parents=True, exist_ok=True)
         return self
 
@@ -67,7 +79,7 @@ class FMBPaths:
         d = self.embeddings / model
         d.mkdir(parents=True, exist_ok=True)
         return d
-    
+
     # Helper for generic "run" outputs if needed
     def new_run_dir(self, tag: str) -> Path:
         stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -75,7 +87,9 @@ class FMBPaths:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+
 _CACHED_PATHS: Optional[FMBPaths] = None
+
 
 def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FMBPaths:
     global _CACHED_PATHS
@@ -101,11 +115,11 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
             if c.exists():
                 config_path = c
                 break
-    
+
     if config_path is None or not config_path.exists():
-         # Fallback to template
-         config_path = repo_root / "src" / "fmb" / "configs" / "paths.template.yaml"
-    
+        # Fallback to template
+        config_path = repo_root / "src" / "fmb" / "configs" / "paths.template.yaml"
+
     # Load config if valid
     cfg = {}
     if config_path.exists():
@@ -135,26 +149,34 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
     dataset_path = resolve("dataset_path", "data")
     dataset_path_train = resolve_optional("dataset_path_train", dataset_path / "train")
     dataset_path_test = resolve_optional("dataset_path_test", dataset_path / "test")
-    dataset_hf_id = cfg.get("dataset_hf_id", "msiudek/astroPT_euclid_Q1_desi_dr1_dataset")
+    dataset_hf_id = cfg.get(
+        "dataset_hf_id", "msiudek/astroPT_euclid_Q1_desi_dr1_dataset"
+    )
     dataset_index = resolve_optional("dataset_index_path", dataset_path / "index.csv")
 
     base_weights_path = resolve("base_weights_path", "checkpoints/base")
-    
+
     # Resolve model specific weights, defaulting to base_weights/<model_name>
-    base_weights_aion = resolve_optional("base_weights_path_aion", base_weights_path / "aion")
-    base_weights_astropt = resolve_optional("base_weights_path_astropt", base_weights_path / "astropt")
-    base_weights_astroclip = resolve_optional("base_weights_path_astroclip", base_weights_path / "astroclip")
+    base_weights_aion = resolve_optional(
+        "base_weights_path_aion", base_weights_path / "aion"
+    )
+    base_weights_astropt = resolve_optional(
+        "base_weights_path_astropt", base_weights_path / "astropt"
+    )
+    base_weights_astroclip = resolve_optional(
+        "base_weights_path_astroclip", base_weights_path / "astroclip"
+    )
 
     retrained_weights_path = resolve("retrained_weights_path", "checkpoints/retrained")
     nfs_weights_path = resolve("nfs_weights_path", "checkpoints/nfs")
     outliers_path = resolve("outliers_path", "outputs/outliers")
     analysis_path = resolve("analysis_path", "outputs/analysis")
-    
+
     # Generic/Legacy
-    emb_path = resolve("embeddings_path", "embeddings") # Also support embeddings_path
+    emb_path = resolve("embeddings_path", "embeddings")  # Also support embeddings_path
     if "emb_root" in cfg:
         emb_path = _p(cfg["emb_root"])
-    
+
     cache_path = resolve("cache_root", "cache")
     runs_path = resolve("runs_root", "runs")
 
@@ -181,6 +203,6 @@ def load_paths(config_path: Optional[Path] = None, *, ensure: bool = True) -> FM
 
     if ensure:
         paths.ensure()
-    
+
     _CACHED_PATHS = paths
     return paths

@@ -16,7 +16,7 @@ from fmb.paths import load_paths
 class AIONTrainingConfig(BaseTrainingConfig):
     """
     Configuration for AION adapter training.
-    
+
     Parameters
     ----------
     hidden : int
@@ -38,29 +38,29 @@ class AIONTrainingConfig(BaseTrainingConfig):
     max_entries : int
         Maximum dataset entries (0 for all).
     """
-    
+
     # Output
     out_dir: Path = load_paths().retrained_weights / "aion"
-    
+
     # Model (U-Net)
     hidden: int = 16
     use_unet_checkpointing: bool = False
-    
+
     # Codec
     codec_grad: str = "ste"
     disable_codec_checkpointing: bool = False
-    
+
     # Preprocessing
     resize: int = 96
     crop_size: int = 96
     max_abs: float = 100.0
     cpu_crop: bool = False
-    
+
     # Data
     cache_dir: str = str(load_paths().dataset)
     split: str = "all"
     max_entries: int = 0
-    
+
     # Training defaults (override base)
     epochs: int = 15
     learning_rate: float = 1e-4

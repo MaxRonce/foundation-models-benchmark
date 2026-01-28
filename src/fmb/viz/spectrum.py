@@ -5,9 +5,10 @@ Module: fmb.viz.spectrum
 Description: Spectrum extraction and visualization utilities
 """
 
+from typing import Optional, Tuple
+
 import numpy as np
 import torch
-from typing import Optional, Tuple
 
 REST_LINES = {
     r"Ly$\alpha$": 1216.0,
@@ -47,6 +48,7 @@ LATEX_REST_LINES = {
     "[S II]": 6731.0,
 }
 
+
 def extract_spectrum(sample: dict) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     """
     Extract wavelength and flux from a sample dictionary.
@@ -55,17 +57,17 @@ def extract_spectrum(sample: dict) -> Tuple[Optional[np.ndarray], Optional[np.nd
     spec = sample.get("spectrum")
     if spec is None:
         return None, None
-        
+
     flux = spec.get("flux")
     if flux is None:
         return None, None
-        
+
     if isinstance(flux, torch.Tensor):
         flux_np = flux.detach().cpu().numpy()
     else:
         flux_np = np.asarray(flux)
     flux_np = np.squeeze(flux_np)
-    
+
     wavelength = spec.get("wavelength")
     if wavelength is None:
         wavelength_np = np.arange(len(flux_np))
@@ -75,5 +77,5 @@ def extract_spectrum(sample: dict) -> Tuple[Optional[np.ndarray], Optional[np.nd
         else:
             wavelength_np = np.asarray(wavelength)
         wavelength_np = np.squeeze(wavelength_np)
-        
+
     return wavelength_np, flux_np

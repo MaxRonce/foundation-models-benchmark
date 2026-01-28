@@ -6,20 +6,18 @@ Description: AION multimodal foundation model
 """
 
 import json
-import math
-from pathlib import Path
 from typing import List, Optional, Tuple
 
+import safetensors.torch as st
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint_utils
-from torch.utils.data import Dataset
-import safetensors.torch as st
 from huggingface_hub import hf_hub_download
+from torch.utils.data import Dataset
 
 from fmb.data.load_display_data import EuclidDESIDataset
-from fmb.models.aion.modalities import EuclidImage, HSCImage, Image
+from fmb.models.aion.modalities import EuclidImage
 
 # Constants
 EUCLID_BANDS = ["EUCLID-VIS", "EUCLID-Y", "EUCLID-J", "EUCLID-H"]
@@ -36,8 +34,10 @@ EUCLID_ZP_NU = {
 # U-Net blocks
 # -----------------------------
 
+
 class DoubleConv(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
+
     def __init__(self, in_ch: int, out_ch: int, hidden_dim: Optional[int] = None):
         super().__init__()
         mid_ch = hidden_dim if hidden_dim else out_ch
@@ -56,6 +56,7 @@ class DoubleConv(nn.Module):
 
 class Down(nn.Module):
     """Downscaling with maxpool then double conv"""
+
     def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
         self.net = nn.Sequential(
@@ -69,6 +70,7 @@ class Down(nn.Module):
 
 class Up(nn.Module):
     """Upscaling then double conv"""
+
     def __init__(self, in_ch: int, out_ch: int, bilinear: bool = True):
         super().__init__()
         if bilinear:
@@ -87,8 +89,7 @@ class Up(nn.Module):
         diffY = x2.size(2) - x1.size(2)
         diffX = x2.size(3) - x1.size(3)
 
-        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
-                        diffY // 2, diffY - diffY // 2])
+        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2, diffY // 2, diffY - diffY // 2])
         x = torch.cat([x2, x1], dim=1)
         return self.conv(x)
 
@@ -104,7 +105,14 @@ class OutConv(nn.Module):
 
 class SimpleUNet(nn.Module):
     """Small U-Net for domain adaptation."""
-    def __init__(self, n_channels: int, n_classes: int, hidden: int, use_checkpointing: bool = False):
+
+    def __init__(
+        self,
+        n_channels: int,
+        n_classes: int,
+        hidden: int,
+        use_checkpointing: bool = False,
+    ):
         super().__init__()
         self.use_checkpointing = use_checkpointing
 
@@ -134,27 +142,45 @@ class SimpleUNet(nn.Module):
 
 class EuclidToHSC(SimpleUNet):
     """Adapter to translate Euclid (4 bands) into HSC-like (5 bands)."""
+
     def __init__(self, hidden: int, use_checkpointing: bool):
-        super().__init__(n_channels=4, n_classes=5, hidden=hidden, use_checkpointing=use_checkpointing)
+        super().__init__(
+            n_channels=4,
+            n_classes=5,
+            hidden=hidden,
+            use_checkpointing=use_checkpointing,
+        )
 
 
 class HSCToEuclid(SimpleUNet):
     """Adapter to translate HSC (5 bands) back to Euclid (4 bands)."""
+
     def __init__(self, hidden: int, use_checkpointing: bool):
-        super().__init__(n_channels=5, n_classes=4, hidden=hidden, use_checkpointing=use_checkpointing)
+        super().__init__(
+            n_channels=5,
+            n_classes=4,
+            hidden=hidden,
+            use_checkpointing=use_checkpointing,
+        )
 
 
 # -----------------------------
 # Dataset
 # -----------------------------
 
+
 class EuclidImageDataset(Dataset):
     """Dataset wrapper for Euclid images from DESI."""
-    def __init__(self, split: str, cache_dir: str, max_entries: Optional[int], resize: int):
+
+    def __init__(
+        self, split: str, cache_dir: str, max_entries: Optional[int], resize: int
+    ):
         self.base = EuclidDESIDataset(split=split, cache_dir=cache_dir, verbose=False)
         self.resize = resize
-        self._indices = list(range(len(self.base))) if not max_entries or max_entries <= 0 else list(
-            range(min(len(self.base), max_entries))
+        self._indices = (
+            list(range(len(self.base)))
+            if not max_entries or max_entries <= 0
+            else list(range(min(len(self.base), max_entries)))
         )
 
     def __len__(self) -> int:
@@ -186,7 +212,9 @@ class EuclidImageDataset(Dataset):
 
         flux = torch.stack(bands, dim=0)  # (4,H,W)
 
-        if self.resize and (flux.shape[-1] != self.resize or flux.shape[-2] != self.resize):
+        if self.resize and (
+            flux.shape[-1] != self.resize or flux.shape[-2] != self.resize
+        ):
             flux = F.interpolate(
                 flux.unsqueeze(0),
                 size=(self.resize, self.resize),
@@ -207,14 +235,19 @@ def collate_euclid(batch: List[EuclidImage]) -> EuclidImage:
 # Helpers
 # -----------------------------
 
+
 def load_frozen_codec(device: torch.device) -> Tuple[nn.Module, dict]:
     """Load frozen AION ImageCodec from HF Hub."""
     # Import here to avoid circular dependency
     from aion.codecs import ImageCodec
     from aion.codecs.config import HF_REPO_ID
 
-    cfg_path = hf_hub_download(HF_REPO_ID, "codecs/image/config.json", local_files_only=True)
-    weights_path = hf_hub_download(HF_REPO_ID, "codecs/image/model.safetensors", local_files_only=True)
+    cfg_path = hf_hub_download(
+        HF_REPO_ID, "codecs/image/config.json", local_files_only=True
+    )
+    weights_path = hf_hub_download(
+        HF_REPO_ID, "codecs/image/model.safetensors", local_files_only=True
+    )
 
     with open(cfg_path) as f:
         codec_cfg = json.load(f)
@@ -223,6 +256,7 @@ def load_frozen_codec(device: torch.device) -> Tuple[nn.Module, dict]:
 
     # Patch band registry to avoid collisions with Euclid bands during codec init
     from aion.codecs.preprocessing.band_to_index import BAND_TO_INDEX
+
     original_bands = dict(BAND_TO_INDEX)
     try:
         keys_to_remove = [k for k in list(BAND_TO_INDEX.keys()) if "EUCLID" in k]
@@ -246,7 +280,9 @@ def load_frozen_codec(device: torch.device) -> Tuple[nn.Module, dict]:
     state = st.load_file(weights_path, device="cpu")
     missing, unexpected = codec.load_state_dict(state, strict=False)
     if missing or unexpected:
-        print(f"[info] Codec load: missing={len(missing)}, unexpected={len(unexpected)}")
+        print(
+            f"[info] Codec load: missing={len(missing)}, unexpected={len(unexpected)}"
+        )
 
     for p in codec.parameters():
         p.requires_grad = False
@@ -261,6 +297,10 @@ def load_aion_components(
 ) -> Tuple[EuclidToHSC, HSCToEuclid, nn.Module]:
     """Load adapters and codec."""
     codec, _ = load_frozen_codec(device)
-    euclid_to_hsc = EuclidToHSC(hidden=hidden, use_checkpointing=use_checkpointing).to(device)
-    hsc_to_euclid = HSCToEuclid(hidden=hidden, use_checkpointing=use_checkpointing).to(device)
+    euclid_to_hsc = EuclidToHSC(hidden=hidden, use_checkpointing=use_checkpointing).to(
+        device
+    )
+    hsc_to_euclid = HSCToEuclid(hidden=hidden, use_checkpointing=use_checkpointing).to(
+        device
+    )
     return euclid_to_hsc, hsc_to_euclid, codec
